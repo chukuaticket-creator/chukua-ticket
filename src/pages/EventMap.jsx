@@ -1,239 +1,161 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, Navigation, Filter, Calendar, ExternalLink } from 'lucide-react';
+import { MapPin, Calendar, ExternalLink } from 'lucide-react';
 import { getPublicMapEvents, formatKES, formatDate, CATEGORIES } from '../lib/api';
 
-// Uses Leaflet (free, open-source maps — no API key needed)
-// Add to index.html: <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-// Add to index.html: <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+function loadLeaflet() {
+  return new Promise((resolve) => {
+    if (window.L) return resolve(window.L);
+    if (!document.querySelector('link[href*="leaflet"]')) {
+      const css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(css);
+    }
+    const existing = document.querySelector('script[src*="leaflet"]');
+    if (existing) {
+      const check = setInterval(() => { if (window.L) { clearInterval(check); resolve(window.L); } }, 100);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.onload = () => resolve(window.L);
+    script.onerror = () => resolve(null);
+    document.head.appendChild(script);
+  });
+}
 
 export default function EventMap() {
   const mapRef = useRef(null);
   const leafletMap = useRef(null);
+  const markersRef = useRef([]);
+  const [L, setL] = useState(null);
   const [events, setEvents] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [mapReady, setMapReady] = useState(false);
   const [category, setCategory] = useState('all');
-  const [userLocation, setUserLocation] = useState(null);
 
   useEffect(() => {
-    getPublicMapEvents().then(data => {
-      setEvents(data);
-      setLoading(false);
-    });
+    loadLeaflet().then(setL);
+    getPublicMapEvents().then(data => { setEvents(data); setLoading(false); });
   }, []);
 
   useEffect(() => {
-    if (!mapRef.current || leafletMap.current) return;
-    if (!window.L) return;
-
-    const L = window.L;
-
-    // Default center: Nairobi
-    const map = L.map(mapRef.current, {
-      center: [-1.2921, 36.8219],
-      zoom: 12,
-      zoomControl: true,
-    });
-
-    // Free OpenStreetMap tiles
+    if (!L || !mapRef.current || leafletMap.current) return;
+    const map = L.map(mapRef.current, { center: [-1.2921, 36.8219], zoom: 12 });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
+      attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
       maxZoom: 19,
     }).addTo(map);
-
     leafletMap.current = map;
-
-    // Try to get user location
+    setMapReady(true);
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(pos => {
-        const { latitude, longitude } = pos.coords;
-        setUserLocation({ lat: latitude, lng: longitude });
-        map.setView([latitude, longitude], 13);
-
-        // User location marker
-        const userIcon = L.divIcon({
-          html: `<div style="
-            width:16px;height:16px;
-            background:#FF5C00;border-radius:50%;
-            border:3px solid white;
-            box-shadow:0 0 0 3px rgba(255,92,0,0.3);
-          "></div>`,
-          iconSize: [16, 16],
-          iconAnchor: [8, 8],
-          className: '',
+      navigator.geolocation.getCurrentPosition(({ coords }) => {
+        map.setView([coords.latitude, coords.longitude], 13);
+        const icon = L.divIcon({
+          html: '<div style="width:14px;height:14px;background:#FF5C00;border-radius:50%;border:3px solid white;box-shadow:0 0 0 4px rgba(255,92,0,0.25);"></div>',
+          iconSize: [14,14], iconAnchor: [7,7], className: '',
         });
-        L.marker([latitude, longitude], { icon: userIcon })
-          .bindPopup('<b>You are here</b>')
-          .addTo(map);
-      });
+        L.marker([coords.latitude, coords.longitude], { icon }).bindPopup('<b>You are here</b>').addTo(map);
+      }, () => {});
     }
-
     return () => { map.remove(); leafletMap.current = null; };
-  }, []);
+  }, [L]);
 
-  // Add event markers when events load
   useEffect(() => {
-    if (!leafletMap.current || !window.L) return;
-    const L = window.L;
+    if (!mapReady || !L || !leafletMap.current) return;
     const map = leafletMap.current;
-
-    // Clear existing markers
-    map.eachLayer(layer => {
-      if (layer instanceof L.Marker && layer._isEventMarker) map.removeLayer(layer);
-    });
-
+    markersRef.current.forEach(m => map.removeLayer(m));
+    markersRef.current = [];
     const filtered = category === 'all' ? events : events.filter(e => e.category === category);
-
     filtered.forEach(evt => {
       if (!evt.lat || !evt.lng) return;
-
+      const label = evt.isFree ? 'FREE' : `KES ${Number(evt.lowestPrice||0).toLocaleString()}`;
       const icon = L.divIcon({
-        html: `<div style="
-          background:#FF5C00;color:white;
-          padding:5px 10px;border-radius:20px;
-          font-size:12px;font-weight:700;white-space:nowrap;
-          box-shadow:0 2px 8px rgba(255,92,0,0.4);
-          border:2px solid white;cursor:pointer;
-          font-family:system-ui;
-        ">${evt.isFree ? 'FREE' : `KES ${Number(evt.lowestPrice || 0).toLocaleString()}`}</div>`,
-        className: '',
-        iconAnchor: [0, 0],
+        html: `<div style="background:#FF5C00;color:white;padding:5px 11px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 3px 10px rgba(255,92,0,0.4);border:2px solid white;cursor:pointer;font-family:system-ui">${label}</div>`,
+        className: '', iconAnchor: [0,0],
       });
-
       const marker = L.marker([evt.lat, evt.lng], { icon });
-      marker._isEventMarker = true;
       marker.on('click', () => setSelected(evt));
       marker.addTo(map);
+      markersRef.current.push(marker);
     });
-  }, [events, category]);
+  }, [events, category, mapReady, L]);
 
   const filtered = category === 'all' ? events : events.filter(e => e.category === category);
 
   return (
-    <div className="page-wrapper" style={{ display:'flex', flexDirection:'column', height:'100vh' }}>
-      {/* Header */}
-      <div style={{ background:'var(--bg)', borderBottom:'1px solid var(--border)', padding:'16px 0', flexShrink:0 }}>
-        <div className="container" style={{ display:'flex', alignItems:'center', gap:16, flexWrap:'wrap' }}>
-          <div>
-            <h1 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:22 }}>
-              🗺️ Events Near You
-            </h1>
-            <p style={{ color:'var(--text-muted)', fontSize:13 }}>
-              {loading ? 'Loading events...' : `${filtered.length} public event${filtered.length !== 1 ? 's' : ''} on the map`}
+    <div style={{ display:'flex', flexDirection:'column', height:'100vh', paddingTop:'var(--nav-h)' }}>
+      {/* Top bar */}
+      <div style={{ background:'var(--bg)', borderBottom:'1px solid var(--border)', padding:'12px 0', flexShrink:0 }}>
+        <div className="container" style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
+          <div style={{ flexShrink:0 }}>
+            <h1 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:18, color:'var(--text)' }}>🗺️ Events Near You</h1>
+            <p style={{ color:'var(--text-muted)', fontSize:11, marginTop:1 }}>
+              {loading ? 'Loading...' : `${filtered.length} public event${filtered.length!==1?'s':''}`}
             </p>
           </div>
-          <div style={{ display:'flex', gap:6, overflowX:'auto', flex:1, scrollbarWidth:'none' }}>
-            {CATEGORIES.slice(0, 6).map(c => (
-              <button key={c.id} className={`pill ${category === c.id ? 'active' : ''}`}
-                onClick={() => setCategory(c.id)}>
+          <div style={{ display:'flex', gap:5, overflowX:'auto', flex:1, scrollbarWidth:'none' }}>
+            {CATEGORIES.slice(0,7).map(c => (
+              <button key={c.id} className={`pill ${category===c.id?'active':''}`} onClick={() => setCategory(c.id)} style={{ fontSize:11 }}>
                 {c.icon} {c.label}
               </button>
             ))}
           </div>
+          <Link to="/organiser/create-event" className="btn btn-primary btn-sm" style={{ flexShrink:0 }}>+ Add Event</Link>
         </div>
       </div>
 
-      {/* Map + sidebar */}
       <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
-
-        {/* Leaflet map */}
-        <div style={{ flex:1, position:'relative' }}>
-          {/* Load Leaflet dynamically */}
-          <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
+        {/* Map */}
+        <div style={{ flex:1, position:'relative', background:'var(--bg-2)' }}>
           <div ref={mapRef} style={{ width:'100%', height:'100%' }} />
-
-          {!window.L && (
-            <div style={{
-              position:'absolute', inset:0,
-              background:'var(--bg-2)',
-              display:'flex', alignItems:'center', justifyContent:'center',
-              flexDirection:'column', gap:12,
-            }}>
-              <MapPin size={48} style={{ color:'var(--ct-orange)' }} />
-              <p style={{ color:'var(--text-muted)', fontSize:14, textAlign:'center', maxWidth:300 }}>
-                Map requires internet connection. Add Leaflet to your index.html to enable the map.
-              </p>
-              <code style={{
-                background:'var(--bg-3)', padding:'8px 14px', borderRadius:8,
-                fontSize:11, color:'var(--text-muted)', display:'block', maxWidth:400,
-              }}>
-                {`<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>`}
-              </code>
+          {!mapReady && (
+            <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:'var(--bg-2)', gap:12 }}>
+              <div className="spinner" style={{ width:36, height:36, borderWidth:3 }} />
+              <p style={{ color:'var(--text-muted)', fontSize:14 }}>Loading map...</p>
             </div>
           )}
-
-          {/* No events state */}
-          {!loading && filtered.length === 0 && (
-            <div style={{
-              position:'absolute', bottom:24, left:'50%', transform:'translateX(-50%)',
-              background:'var(--card-bg)', border:'1px solid var(--border)',
-              borderRadius:12, padding:'14px 20px',
-              boxShadow:'var(--card-shadow)', textAlign:'center',
-            }}>
-              <p style={{ color:'var(--text-muted)', fontSize:14 }}>
-                No public events in this category yet.{' '}
-                <Link to="/organiser/create-event" style={{ color:'var(--ct-orange)', fontWeight:600 }}>
-                  List your event →
-                </Link>
-              </p>
+          {mapReady && !loading && filtered.filter(e=>e.lat&&e.lng).length===0 && (
+            <div style={{ position:'absolute', bottom:20, left:'50%', transform:'translateX(-50%)', background:'var(--card-bg)', border:'1px solid var(--border)', borderRadius:10, padding:'11px 18px', boxShadow:'var(--card-shadow)', fontSize:13, color:'var(--text-muted)', whiteSpace:'nowrap' }}>
+              {events.length===0
+                ? <><Link to="/organiser/create-event" style={{ color:'var(--ct-orange)', fontWeight:600 }}>Create the first event →</Link></>
+                : 'No map events in this category yet.'}
             </div>
           )}
         </div>
 
-        {/* Event panel */}
-        <div style={{
-          width: selected ? 320 : 0,
-          transition: 'width 0.3s ease',
-          overflow: 'hidden',
-          borderLeft: '1px solid var(--border)',
-          background: 'var(--bg)',
-          flexShrink: 0,
-        }}>
+        {/* Selected event panel */}
+        <div style={{ width:selected?300:0, transition:'width 0.3s ease', overflow:'hidden', flexShrink:0, borderLeft:'1px solid var(--border)', background:'var(--bg)' }}>
           {selected && (
-            <div style={{ width:320, padding:20, animation:'fadeIn 0.2s ease' }}>
-              <button onClick={() => setSelected(null)}
-                style={{ background:'none', border:'none', color:'var(--text-muted)', cursor:'pointer', marginBottom:16, fontSize:13 }}>
-                ✕ Close
-              </button>
-              {selected.image && (
-                <img src={selected.image} alt={selected.title}
-                  style={{ width:'100%', aspectRatio:'16/9', objectFit:'cover', borderRadius:10, marginBottom:14 }} />
-              )}
-              <span className="badge badge-orange" style={{ marginBottom:10 }}>{selected.category}</span>
-              <h3 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:18, marginBottom:8, color:'var(--text)' }}>
-                {selected.title}
-              </h3>
-              <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
-                <div style={{ display:'flex', gap:7, alignItems:'center', fontSize:13, color:'var(--text-muted)' }}>
-                  <Calendar size={13} style={{ color:'var(--ct-orange)' }} />
-                  {formatDate(selected.date)} · {selected.time}
+            <div style={{ width:300, padding:18, overflowY:'auto', height:'100%', animation:'fadeIn 0.2s ease' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:12 }}>
+                <span className="badge badge-orange">{selected.category}</span>
+                <button onClick={() => setSelected(null)} style={{ background:'none', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:18 }}>✕</button>
+              </div>
+              {selected.image && <img src={selected.image} alt={selected.title} style={{ width:'100%', aspectRatio:'16/9', objectFit:'cover', borderRadius:10, marginBottom:12 }} />}
+              <h3 style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:17, color:'var(--text)', marginBottom:10, lineHeight:1.2 }}>{selected.title}</h3>
+              <div style={{ display:'flex', flexDirection:'column', gap:5, marginBottom:14 }}>
+                <div style={{ display:'flex', gap:6, fontSize:12, color:'var(--text-muted)', alignItems:'center' }}>
+                  <Calendar size={12} style={{ color:'var(--ct-orange)' }} /> {formatDate(selected.date)}{selected.time?` · ${selected.time}`:''}
                 </div>
-                <div style={{ display:'flex', gap:7, alignItems:'center', fontSize:13, color:'var(--text-muted)' }}>
-                  <MapPin size={13} style={{ color:'var(--ct-orange)' }} />
-                  {selected.venue}, {selected.city}
+                <div style={{ display:'flex', gap:6, fontSize:12, color:'var(--text-muted)', alignItems:'center' }}>
+                  <MapPin size={12} style={{ color:'var(--ct-orange)' }} /> {selected.venue}{selected.city?`, ${selected.city}`:''}
                 </div>
               </div>
-              <div style={{
-                background:'var(--bg-2)', borderRadius:10, padding:'12px 14px',
-                display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14,
-              }}>
+              <div style={{ background:'var(--bg-2)', borderRadius:10, padding:'11px 14px', display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
                 <div>
-                  <p style={{ fontSize:11, color:'var(--text-muted)' }}>From</p>
-                  <p style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:20, color: selected.isFree ? 'var(--success)' : 'var(--ct-orange)' }}>
-                    {formatKES(selected.lowestPrice || 0)}
+                  <p style={{ fontSize:10, color:'var(--text-muted)' }}>From</p>
+                  <p style={{ fontFamily:'var(--font-display)', fontWeight:800, fontSize:20, color:selected.isFree?'var(--success)':'var(--ct-orange)' }}>
+                    {formatKES(selected.lowestPrice||0)}
                   </p>
                 </div>
-                <Link to={`/events/${selected.id}`} className="btn btn-primary" style={{ display:'flex', gap:6 }}>
-                  Get Tickets <ExternalLink size={13} />
+                <Link to={`/events/${selected.id}`} className="btn btn-primary btn-sm" style={{ display:'flex', gap:5 }}>
+                  Tickets <ExternalLink size={12}/>
                 </Link>
               </div>
-              {selected.description && (
-                <p style={{ fontSize:13, color:'var(--text-muted)', lineHeight:1.6 }}>
-                  {selected.description.slice(0, 140)}{selected.description.length > 140 ? '…' : ''}
-                </p>
-              )}
+              {selected.description && <p style={{ fontSize:13, color:'var(--text-muted)', lineHeight:1.6 }}>{selected.description.slice(0,160)}{selected.description.length>160?'…':''}</p>}
             </div>
           )}
         </div>
