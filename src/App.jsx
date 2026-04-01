@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/layout/Navbar';
 import Footer from './components/layout/Footer';
 import Landing from './pages/Landing';
@@ -10,17 +10,19 @@ import CreateEvent from './pages/CreateEvent';
 import { Login, Register } from './pages/Auth';
 import { HowItWorks, NotFound } from './pages/HowItWorks';
 
-// Pages that show the full footer
-const PAGES_WITH_FOOTER = ['/', '/events', '/how-it-works', '/organiser'];
 const pagesWithNoNav = ['/login', '/register'];
+const pagesWithNoFooter = ['/organiser', '/organiser/create-event', '/login', '/register'];
 
 export default function App() {
-  const path = window.location.pathname;
-  const hideNavFooter = pagesWithNoNav.some(p => path.startsWith(p));
+  const location = useLocation();
+  const path = location.pathname;
+
+  const hideNav = pagesWithNoNav.some(p => path.startsWith(p));
+  const hideFooter = pagesWithNoFooter.some(p => path.startsWith(p));
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {!hideNavFooter && <Navbar />}
+      {!hideNav && <Navbar />}
 
       <main style={{ flex: 1 }}>
         <Routes>
@@ -36,7 +38,7 @@ export default function App() {
         </Routes>
       </main>
 
-      {!hideNavFooter && <Footer />}
+      {!hideFooter && <Footer />}
     </div>
   );
 }
