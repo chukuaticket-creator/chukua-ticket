@@ -1,0 +1,224 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Send, Shield, User, AlertTriangle, CheckCircle } from 'lucide-react';
+import { getMessages, sendMessage } from '../../lib/api';
+
+const ROLES = {
+  admin: { label: 'Admin', color: '#FF5C00' },
+  gate: { label: 'Gate', color: '#16A34A' },
+  security: { label: 'Security', color: '#DC2626' },
+  staff: { label: 'Staff', color: '#2563EB' },
+};
+
+const QUICK_ACTIONS = [
+  { label: '🚨 Emergency', text: 'EMERGENCY: All staff to main entrance immediately.' },
+  { label: '🔀 Redirect Gate', text: 'Please redirect attendees from Gate A to Gate B — Gate A is congested.' },
+  { label: '🏥 Medical', text: 'Medical team needed at [location]. Stand by.' },
+  { label: '✅ All Clear', text: 'All clear. Resume normal operations.' },
+];
+
+export default function TeamChat({ eventId, currentUser = { name: 'Organiser', role: 'admin' } }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    if (!eventId) return;
+    // Load existing messages
+    getMessages(eventId).then(msgs => {
+      setMessages(msgs);
+      setConnected(true);
+    });
+
+    // Poll for new messages every 5s (replace with WebSocket when backend ready)
+    const interval = setInterval(() => {
+      getMessages(eventId).then(msgs => setMessages(msgs));
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [eventId]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleSend = async (text = input) => {
+    if (!text.trim() || sending) return;
+    setSending(true);
+    const optimistic = {
+      id: Date.now(),
+      text: text.trim(),
+      sender: currentUser.name,
+      role: currentUser.role,
+      time: new Date().toISOString(),
+      isOwn: true,
+    };
+    setMessages(prev => [...prev, optimistic]);
+    setInput('');
+    await sendMessage(eventId, text.trim());
+    setSending(false);
+  };
+
+  const handleKey = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  };
+
+  const roleColor = (role) => ROLES[role]?.color || '#888';
+  const roleLabel = (role) => ROLES[role]?.label || role;
+
+  const isAlert = (text) => text?.toLowerCase().includes('emergency') || text?.toLowerCase().includes('medical');
+
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column',
+      height: '100%', minHeight: 400,
+      background: 'var(--bg)',
+      border: '1px solid var(--border)',
+      borderRadius: 'var(--radius)',
+      overflow: 'hidden',
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '14px 16px',
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--bg-2)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        flexShrink: 0,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Shield size={16} style={{ color: 'var(--ct-orange)' }} />
+          <span style={{ fontWeight: 700, fontSize: 14, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
+            Team Command Chat
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{
+            width: 7, height: 7, borderRadius: '50%',
+            background: connected ? 'var(--success)' : '#888',
+            animation: connected ? 'pulseRing 2s ease infinite' : 'none',
+          }} />
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            {connected ? 'Connected' : 'Connecting...'}
+          </span>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {messages.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
+            <Shield size={32} style={{ margin: '0 auto 10px', opacity: 0.3 }} />
+            <p style={{ fontSize: 13 }}>No messages yet. Team chat is private to staff only.</p>
+          </div>
+        )}
+
+        {messages.map((msg, i) => {
+          const alert = isAlert(msg.text);
+          return (
+            <div key={msg.id || i} style={{
+              display: 'flex',
+              flexDirection: msg.isOwn ? 'row-reverse' : 'row',
+              gap: 8, alignItems: 'flex-start',
+              animation: 'fadeUp 0.2s ease',
+            }}>
+              {/* Avatar */}
+              <div style={{
+                width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                background: roleColor(msg.role),
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, fontWeight: 700, color: 'white',
+              }}>
+                {msg.sender?.charAt(0)?.toUpperCase() || '?'}
+              </div>
+
+              <div style={{ maxWidth: '75%' }}>
+                {/* Sender */}
+                {!msg.isOwn && (
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 3, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: roleColor(msg.role) }}>{msg.sender}</span>
+                    <span style={{
+                      fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 100,
+                      background: roleColor(msg.role) + '20', color: roleColor(msg.role),
+                      textTransform: 'uppercase', letterSpacing: '0.05em',
+                    }}>{roleLabel(msg.role)}</span>
+                  </div>
+                )}
+
+                {/* Bubble */}
+                <div style={{
+                  padding: '9px 13px', borderRadius: 12,
+                  borderTopLeftRadius: msg.isOwn ? 12 : 3,
+                  borderTopRightRadius: msg.isOwn ? 3 : 12,
+                  background: alert
+                    ? 'rgba(220,38,38,0.1)'
+                    : msg.isOwn ? 'var(--ct-orange)' : 'var(--bg-3)',
+                  border: alert ? '1px solid rgba(220,38,38,0.3)' : '1px solid transparent',
+                  color: msg.isOwn && !alert ? 'white' : 'var(--text)',
+                }}>
+                  {alert && <AlertTriangle size={13} style={{ color: 'var(--danger)', marginBottom: 4, display: 'block' }} />}
+                  <p style={{ fontSize: 13, lineHeight: 1.5, margin: 0 }}>{msg.text}</p>
+                </div>
+
+                <p style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 3, textAlign: msg.isOwn ? 'right' : 'left' }}>
+                  {msg.time ? new Date(msg.time).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' }) : 'now'}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Quick actions */}
+      <div style={{
+        padding: '8px 12px',
+        borderTop: '1px solid var(--border)',
+        display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', flexShrink: 0,
+      }}>
+        {QUICK_ACTIONS.map((a, i) => (
+          <button key={i}
+            onClick={() => handleSend(a.text)}
+            style={{
+              padding: '4px 10px', borderRadius: 100,
+              background: 'var(--bg-3)', border: '1px solid var(--border)',
+              fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+              whiteSpace: 'nowrap', cursor: 'pointer', transition: 'all 0.2s',
+            }}
+            onMouseEnter={e => { e.target.style.borderColor = 'var(--ct-orange)'; e.target.style.color = 'var(--ct-orange)'; }}
+            onMouseLeave={e => { e.target.style.borderColor = 'var(--border)'; e.target.style.color = 'var(--text-muted)'; }}
+          >
+            {a.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Input */}
+      <div style={{
+        padding: '10px 12px', borderTop: '1px solid var(--border)',
+        display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0,
+        background: 'var(--bg-2)',
+      }}>
+        <textarea
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={handleKey}
+          placeholder="Message your team... (Enter to send)"
+          rows={1}
+          style={{
+            flex: 1, resize: 'none', minHeight: 36, maxHeight: 80,
+            padding: '8px 12px', fontSize: 13,
+          }}
+        />
+        <button
+          onClick={() => handleSend()}
+          className="btn btn-primary btn-sm"
+          disabled={!input.trim() || sending}
+          style={{ padding: '8px 12px', flexShrink: 0 }}
+        >
+          <Send size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
