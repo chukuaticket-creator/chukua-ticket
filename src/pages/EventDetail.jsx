@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Calendar, MapPin, Users, Share2, Heart, ArrowLeft, Minus, Plus, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { getEvent, purchaseTicket, calcFees, openPaystack, generateRef, formatKES, formatDate } from '../lib/api';
+import { getEvent, createOrder, completeFreeOrder, calcFees, openPaystack, generateRef, formatKES, formatDate } from '../lib/api';
 
 // Status badge is derived locally — no mock data module.
 function getStatusBadge(status) {
@@ -93,7 +93,7 @@ export default function EventDetail() {
     .filter(t => (quantities[t.id] || 0) > 0)
     .map(t => ({ ticketId: t.id, name: t.name, qty: quantities[t.id], price: t.price }));
 
-  const handleBuy = (e) => {
+  const handleBuy = async (e) => {
     e.preventDefault();
     if (totalQty === 0) return;
     if (!buyerEmail || !buyerName) {
@@ -101,51 +101,56 @@ export default function EventDetail() {
       return;
     }
 
+    setProcessing(true);
     const reference = generateRef();
-    const basePayload = {
+    const subaccountCode = event.subaccountCode || event.subaccount_code;
+
+    // The order is recorded as 'pending' first. The Paystack webhook is what
+    // marks it paid — if we created it after payment, the webhook could arrive
+    // before the row existed and the sale would be lost.
+    const order = await createOrder({
       eventId: event.id,
+      organiserId: event.organiserId,
       reference,
       buyer: { name: buyerName, email: buyerEmail, phone: buyerPhone },
       items: orderLines,
-      amountKES: total,
-      commission,
-      organiserReceives: total - commission,
-    };
+      subtotal,
+      subaccountCode,
+    });
 
-    if (subtotal === 0) {
-      // Free event — register, no payment step.
-      setProcessing(true);
-      purchaseTicket({ ...basePayload, method: 'free' })
-        .then(() => {
-          setProcessing(false);
-          setSuccess({ reference, name: buyerName });
-          setCheckoutOpen(false);
-        })
-        .catch(() => {
-          setProcessing(false);
-          showToast('Could not register. Please try again.', 'error');
-        });
+    if (order?.error) {
+      setProcessing(false);
+      showToast(order.error, 'error');
       return;
     }
 
-    setProcessing(true);
+    if (subtotal === 0) {
+      const res = await completeFreeOrder(reference);
+      setProcessing(false);
+      if (res?.error) {
+        showToast('Could not complete your registration. Please try again.', 'error');
+        return;
+      }
+      setSuccess({ reference, name: buyerName });
+      setCheckoutOpen(false);
+      return;
+    }
+
     openPaystack({
       email: buyerEmail,
       amountKES: total, // attendee pays exactly the ticket price
-      // Paystack splits at transaction time: organiser's subaccount is settled
-      // directly, our 7% is retained. Without a subaccount_code the whole
-      // amount lands in the main account and must be settled manually.
-      subaccount: event.subaccountCode || event.subaccount_code,
+      // Paystack splits at transaction time: the organiser's subaccount is
+      // settled directly and our 7% is retained.
+      subaccount: subaccountCode,
       platformFeeKES: commission,
       reference,
       eventTitle: event.title,
-      onSuccess: (response) => {
-        purchaseTicket({ ...basePayload, reference: response.reference, method: 'paystack' })
-          .finally(() => {
-            setProcessing(false);
-            setSuccess({ reference: response.reference, name: buyerName });
-            setCheckoutOpen(false);
-          });
+      onSuccess: () => {
+        setProcessing(false);
+        // Deliberately not marking the order paid here — only the webhook may
+        // do that, since a client-side success callback can be faked.
+        setSuccess({ reference, name: buyerName });
+        setCheckoutOpen(false);
       },
       onClose: () => {
         setProcessing(false);
