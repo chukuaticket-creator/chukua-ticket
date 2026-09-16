@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Calendar, MapPin, Users, Share2, Heart, ArrowLeft, Minus, Plus, CheckCircle2, AlertTriangle, Link2, Check, MessageCircle, Twitter, Facebook } from 'lucide-react';
 import { getEvent, createOrder, completeFreeOrder, calcFees, openPaystack, generateRef, formatKES, formatDate } from '../lib/api';
+import { renderQR, downloadQR } from '../lib/qr';
 
 // Status badge is derived locally — no mock data module.
 function getStatusBadge(status) {
@@ -130,6 +131,68 @@ function ShareMenu({ event, onCopied }) {
   );
 }
 
+function SuccessTicket({ success, event, email }) {
+  const qrRef = useRef(null);
+
+  useEffect(() => {
+    // The QR encodes the ticket code itself, which is what the gate scanner reads.
+    if (success.ticketCode) renderQR(qrRef.current, success.ticketCode, 180).catch(() => {});
+  }, [success.ticketCode]);
+
+  return (
+    <div className="page-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh', padding: 16 }}>
+      <div style={{
+        textAlign: 'center', maxWidth: 420, width: '100%',
+        background: 'var(--bg-2)', border: '1px solid var(--border)',
+        borderRadius: 20, padding: 36,
+      }}>
+        <div style={{ fontSize: 52, marginBottom: 12 }}>🎉</div>
+        <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 26, marginBottom: 6 }}>
+          You're going, {success.name.split(' ')[0]}!
+        </h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: 22 }}>{event.title}</p>
+
+        {success.ticketCode && (
+          <>
+            {/* White plate — a QR on a dark background won't scan. */}
+            <div style={{ background: '#fff', padding: 14, borderRadius: 14, display: 'inline-block', marginBottom: 14 }}>
+              <div ref={qrRef} />
+            </div>
+
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Your ticket code</p>
+            <p style={{
+              fontFamily: 'monospace', fontSize: 24, fontWeight: 700,
+              color: 'var(--ct-orange)', letterSpacing: '0.08em', marginBottom: 16,
+            }}>
+              {success.ticketCode}
+            </p>
+
+            <button
+              className="btn btn-secondary btn-block"
+              style={{ marginBottom: 18 }}
+              onClick={() => downloadQR(qrRef.current, `ticket-${success.ticketCode}.png`, success.ticketCode)}
+            >
+              Save ticket QR
+            </button>
+          </>
+        )}
+
+        <p style={{ color: 'var(--text-2)', marginBottom: 8, fontSize: 14, lineHeight: 1.6 }}>
+          Show this code or QR at the gate. We've also emailed it to <strong>{email}</strong>.
+        </p>
+        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 26 }}>
+          Ref: <span style={{ fontFamily: 'monospace' }}>{success.reference}</span>
+        </p>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <Link to="/events" className="btn btn-secondary" style={{ flex: 1 }}>Discover More</Link>
+          <Link to="/" className="btn btn-primary" style={{ flex: 1 }}>Go Home</Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EventDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -241,7 +304,7 @@ export default function EventDetail() {
         showToast('Could not complete your registration. Please try again.', 'error');
         return;
       }
-      setSuccess({ reference, name: buyerName });
+      setSuccess({ reference, name: buyerName, ticketCode: order.ticketCode });
       setCheckoutOpen(false);
       return;
     }
@@ -259,7 +322,7 @@ export default function EventDetail() {
         setProcessing(false);
         // Deliberately not marking the order paid here — only the webhook may
         // do that, since a client-side success callback can be faked.
-        setSuccess({ reference, name: buyerName });
+        setSuccess({ reference, name: buyerName, ticketCode: order.ticketCode });
         setCheckoutOpen(false);
       },
       onClose: () => {
@@ -270,32 +333,7 @@ export default function EventDetail() {
   };
 
   if (success) {
-    return (
-      <div className="page-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh' }}>
-        <div style={{
-          textAlign: 'center', maxWidth: 480, margin: '0 auto',
-          background: 'var(--bg-2)', border: '1px solid var(--border)',
-          borderRadius: 20, padding: 48,
-        }}>
-          <div style={{ fontSize: 64, marginBottom: 20 }}>🎉</div>
-          <CheckCircle2 size={48} style={{ color: 'var(--success)', margin: '0 auto 16px' }} />
-          <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 28, marginBottom: 8 }}>
-            You're going, {success.name.split(' ')[0]}!
-          </h2>
-          <p style={{ color: 'var(--text-muted)', marginBottom: 8 }}>{event.title}</p>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 32 }}>
-            Ref: <span style={{ color: 'var(--ct-orange)', fontFamily: 'monospace' }}>{success.reference}</span>
-          </p>
-          <p style={{ color: 'var(--text-2)', marginBottom: 24, fontSize: 14 }}>
-            Your ticket has been sent to <strong>{buyerEmail}</strong>. Check your inbox!
-          </p>
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-            <Link to="/events" className="btn btn-secondary">Discover More</Link>
-            <Link to="/" className="btn btn-primary">Go Home</Link>
-          </div>
-        </div>
-      </div>
-    );
+    return <SuccessTicket success={success} event={event} email={buyerEmail} />;
   }
 
   return (
