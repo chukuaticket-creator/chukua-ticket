@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Calendar, MapPin, Users, Share2, Heart, ArrowLeft, Minus, Plus, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Calendar, MapPin, Users, Share2, Heart, ArrowLeft, Minus, Plus, CheckCircle2, AlertTriangle, Link2, Check, MessageCircle, Twitter, Facebook } from 'lucide-react';
 import { getEvent, createOrder, completeFreeOrder, calcFees, openPaystack, generateRef, formatKES, formatDate } from '../lib/api';
 
 // Status badge is derived locally — no mock data module.
@@ -13,6 +13,121 @@ function getStatusBadge(status) {
     case 'live':       return { label: 'Live Now',   class: 'badge-green' };
     default:           return { label: 'On Sale',    class: 'badge-green' };
   }
+}
+
+const SITE = 'https://chukuaticket.com';
+
+function ShareMenu({ event, onCopied }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const url = `${SITE}/events/${event.id}`;
+  const line = `${event.title}${event.venue ? ` at ${event.venue}` : ''} — tickets on Chukua Ticket`;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Older browsers and non-HTTPS contexts have no clipboard API.
+      const el = document.createElement('textarea');
+      el.value = url;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    setCopied(true);
+    onCopied?.();
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // On phones this opens the real OS share sheet, which is what most people expect.
+  const nativeShare = async () => {
+    try {
+      await navigator.share({ title: event.title, text: line, url });
+      setOpen(false);
+    } catch {
+      /* dismissed — leave the menu as it is */
+    }
+  };
+
+  const targets = [
+    { label: 'WhatsApp', icon: <MessageCircle size={15} />, href: `https://wa.me/?text=${encodeURIComponent(`${line}\n${url}`)}` },
+    { label: 'X',        icon: <Twitter size={15} />,       href: `https://twitter.com/intent/tweet?text=${encodeURIComponent(line)}&url=${encodeURIComponent(url)}` },
+    { label: 'Facebook', icon: <Facebook size={15} />,      href: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}` },
+  ];
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)} style={{ display: 'flex', gap: 6 }}>
+        <Share2 size={14} /> Share
+      </button>
+
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1 }} />
+          <div style={{
+            position: 'absolute', left: 0, top: 'calc(100% + 8px)', zIndex: 2,
+            background: 'var(--bg-2)', border: '1px solid var(--border)',
+            borderRadius: 12, padding: 10, width: 280,
+            boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+          }}>
+            {/* The link itself, visible and selectable */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              background: 'var(--bg-3)', border: '1px solid var(--border)',
+              borderRadius: 8, padding: '8px 10px', marginBottom: 8,
+            }}>
+              <Link2 size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+              <span style={{
+                fontSize: 12, color: 'var(--text-2)', flex: 1,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {url.replace('https://', '')}
+              </span>
+            </div>
+
+            <button
+              onClick={copy}
+              className="btn btn-primary btn-sm btn-block"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 8 }}
+            >
+              {copied ? <><Check size={14} /> Copied</> : <><Link2 size={14} /> Copy link</>}
+            </button>
+
+            <div style={{ display: 'flex', gap: 6 }}>
+              {targets.map(t => (
+                <a
+                  key={t.label}
+                  href={t.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setOpen(false)}
+                  style={{
+                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                    padding: '10px 4px', borderRadius: 8, fontSize: 11,
+                    color: 'var(--text-2)', border: '1px solid var(--border)',
+                  }}
+                >
+                  {t.icon} {t.label}
+                </a>
+              ))}
+            </div>
+
+            {typeof navigator !== 'undefined' && navigator.share && (
+              <button
+                onClick={nativeShare}
+                className="btn btn-ghost btn-sm btn-block"
+                style={{ marginTop: 8, fontSize: 12 }}
+              >
+                More options…
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function EventDetail() {
@@ -82,11 +197,6 @@ export default function EventDetail() {
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
-  };
-
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href);
-    showToast('Link copied to clipboard!');
   };
 
   const orderLines = tickets
@@ -240,13 +350,7 @@ export default function EventDetail() {
             </div>
 
             <div style={{ display: 'flex', gap: 8, marginBottom: 32 }}>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={handleCopyLink}
-                style={{ display: 'flex', gap: 6 }}
-              >
-                <Share2 size={14} /> Share
-              </button>
+              <ShareMenu event={event} onCopied={() => showToast('Event link copied!')} />
               <button
                 className={`btn btn-sm ${wishlist ? 'btn-primary' : 'btn-ghost'}`}
                 onClick={() => setWishlist(!wishlist)}
@@ -263,11 +367,27 @@ export default function EventDetail() {
             <p style={{ color: 'var(--text-2)', lineHeight: 1.8, marginBottom: 24 }}>{event.description}</p>
 
             {event.organiser && (
-              <div style={{ marginBottom: 24 }}>
+              <div style={{ marginBottom: 20 }}>
                 <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 6 }}>Organised by</p>
                 <p style={{ fontWeight: 600 }}>{event.organiser}</p>
               </div>
             )}
+
+            {/* Tells an attendee arriving from a shared link where they are. */}
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              background: 'var(--ct-orange-dim)', border: '1px solid rgba(255,92,0,0.25)',
+              borderRadius: 999, padding: '7px 14px', marginBottom: 24,
+              fontSize: 12, color: 'var(--text-2)',
+            }}>
+              <img
+                src="https://pub-6e116d83d30d40c7b5583e078cd66cdf.r2.dev/Chukua_Ticket_Logo_2.png"
+                alt=""
+                style={{ height: 14, width: 'auto' }}
+                onError={e => { e.target.style.display = 'none'; }}
+              />
+              Tickets issued securely by <strong style={{ color: 'var(--ct-orange)' }}>Chukua Ticket</strong>
+            </div>
 
             {totalCapacity > 0 && (
               <div>
