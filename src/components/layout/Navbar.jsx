@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, Search, Sun, Moon } from 'lucide-react';
+import { Menu, X, Search, LogOut, LayoutDashboard } from 'lucide-react';
 import { useTheme } from '../../lib/theme';
+import { useAuth } from '../../lib/auth';
+import { logout } from '../../lib/api';
 
 const LOGO = 'https://pub-6e116d83d30d40c7b5583e078cd66cdf.r2.dev/Chukua_Ticket_Logo_2.png';
 
@@ -13,6 +15,18 @@ export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { dark, toggle } = useTheme();
+  const { user, signOut } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleSignOut = async () => {
+    await logout();      // revokes the token with Supabase
+    signOut();           // clears it locally and updates the UI
+    setMenuOpen(false);
+    setMobileOpen(false);
+    navigate('/');
+  };
+
+  const firstName = user?.name ? user.name.split(' ')[0] : (user?.email || '').split('@')[0];
 
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 16);
@@ -79,7 +93,59 @@ export default function Navbar() {
               aria-label="Toggle dark mode"
             />
 
-            <Link to="/login" className="btn btn-ghost btn-sm">Sign In</Link>
+            {user ? (
+              <div style={{ position: 'relative' }}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setMenuOpen(o => !o)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                >
+                  <span style={{
+                    width: 24, height: 24, borderRadius: '50%',
+                    background: 'var(--ct-orange)', color: '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+                  }}>
+                    {(firstName || '?').charAt(0)}
+                  </span>
+                  {firstName}
+                </button>
+
+                {menuOpen && (
+                  <>
+                    {/* Click-away layer */}
+                    <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1 }} />
+                    <div style={{
+                      position: 'absolute', right: 0, top: 'calc(100% + 8px)', zIndex: 2,
+                      background: 'var(--bg-2)', border: '1px solid var(--border)',
+                      borderRadius: 12, padding: 6, minWidth: 190,
+                      boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+                    }}>
+                      <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600 }}>{user.name || firstName}</p>
+                        <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>{user.email}</p>
+                      </div>
+                      <Link to="/organiser" onClick={() => setMenuOpen(false)} style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px',
+                        borderRadius: 8, fontSize: 13, color: 'var(--text)',
+                      }}>
+                        <LayoutDashboard size={14} /> Dashboard
+                      </Link>
+                      <button onClick={handleSignOut} style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px',
+                        borderRadius: 8, fontSize: 13, width: '100%', textAlign: 'left',
+                        background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)',
+                        fontFamily: 'var(--font-body)',
+                      }}>
+                        <LogOut size={14} /> Sign Out
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <Link to="/login" className="btn btn-ghost btn-sm">Sign In</Link>
+            )}
             <Link to="/organiser/create-event" className="btn btn-primary btn-sm">+ List Event</Link>
 
             <button className="mobile-btn" onClick={() => setMobileOpen(o => !o)}
@@ -124,7 +190,20 @@ export default function Navbar() {
             <span style={{ fontSize:14, color:'var(--text-muted)' }}>{dark ? '🌙 Dark mode' : '☀️ Light mode'}</span>
             <button onClick={toggle} className={`theme-toggle ${dark ? 'dark' : ''}`}/>
           </div>
-          <Link to="/login" className="btn btn-secondary btn-block">Sign In</Link>
+          {user ? (
+            <>
+              <div style={{ padding: '4px 16px 12px' }}>
+                <p style={{ fontSize: 15, fontWeight: 600 }}>{user.name || firstName}</p>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{user.email}</p>
+              </div>
+              <Link to="/organiser" className="btn btn-secondary btn-block">Dashboard</Link>
+              <button onClick={handleSignOut} className="btn btn-ghost btn-block" style={{ color: 'var(--danger)' }}>
+                Sign Out
+              </button>
+            </>
+          ) : (
+            <Link to="/login" className="btn btn-secondary btn-block">Sign In</Link>
+          )}
           <Link to="/organiser/create-event" className="btn btn-primary btn-block">+ List Your Event</Link>
         </div>
       )}
