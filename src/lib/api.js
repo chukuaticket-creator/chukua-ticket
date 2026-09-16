@@ -60,6 +60,13 @@ export async function getOrganiserEvents() {
   return data?.events || [];
 }
 
+// Settlement history. Payouts are automatic (Paystack splits each sale and
+// settles the organiser's subaccount on T+2), so this is a record, not a queue.
+export async function getOrganiserPayouts() {
+  const data = await request('/api/organiser/payouts');
+  return data?.payouts || [];
+}
+
 // ─── Auth ───────────────────────────────────────────────────────
 export async function login(email, password) {
   return request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
@@ -67,6 +74,18 @@ export async function login(email, password) {
 
 export async function register(payload) {
   return request('/api/auth/register', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+// ─── Profile & payouts ──────────────────────────────────────────
+export async function getProfile() {
+  const data = await request('/api/profile');
+  return data?.profile || null;
+}
+
+// Creates the organiser's Paystack subaccount server-side (the secret key must
+// never reach the browser). Returns { subaccount_code } on success.
+export async function createSubaccount(payload) {
+  return request('/api/organiser/subaccount', { method: 'POST', body: JSON.stringify(payload) });
 }
 
 // ─── Reactions ──────────────────────────────────────────────────
@@ -90,11 +109,18 @@ export async function sendMessage(eventId, text) {
 }
 
 // ─── Paystack ───────────────────────────────────────────────────
+// Single implementation lives in ./paystack.js. Re-exported here so pages can
+// keep importing everything from one module.
+export { openPaystack, generateRef, verifyPayment } from './paystack';
+
 export const COMMISSION = 0.07;
 
+// Organiser pays the 7% — attendee pays the exact ticket price.
+// `total` is what the attendee is charged. `organiserReceives` is the payout.
 export function calcFees(subtotal) {
   const commission = Math.round(subtotal * COMMISSION);
-  return { subtotal, commission, total: subtotal + commission };
+  const organiserReceives = subtotal - commission;
+  return { subtotal, commission, total: subtotal, organiserReceives };
 }
 
 export function formatKES(n) {
@@ -107,28 +133,6 @@ export function formatDate(d) {
   return new Date(d).toLocaleDateString('en-KE', {
     weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
   });
-}
-
-export function generateRef() {
-  return `CT-${Date.now()}-${Math.random().toString(36).substr(2,6).toUpperCase()}`;
-}
-
-export function openPaystack({ email, amountKES, reference, eventTitle, onSuccess, onClose }) {
-  const load = () => {
-    const h = window.PaystackPop.setup({
-      key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_YOUR_KEY',
-      email, amount: amountKES * 100, currency: 'KES', ref: reference,
-      metadata: { custom_fields: [{ display_name: 'Event', variable_name: 'event', value: eventTitle }] },
-      callback: onSuccess,
-      onClose,
-    });
-    h.openIframe();
-  };
-  if (window.PaystackPop) return load();
-  const s = document.createElement('script');
-  s.src = 'https://js.paystack.co/v1/inline.js';
-  s.onload = load;
-  document.head.appendChild(s);
 }
 
 export const CATEGORIES = [
