@@ -1,14 +1,21 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Twitter, Instagram, Facebook, Youtube, Mail, Phone } from 'lucide-react';
+import { Twitter, Instagram, Facebook, Youtube, Mail, Phone, MessageCircle } from 'lucide-react';
+
+// One place to change support details.
+const SUPPORT_EMAIL = 'support@chukuaticket.com';
+const SUPPORT_PHONE_DISPLAY = '+254 112 159 006';
+const SUPPORT_PHONE_TEL = '+254112159006';
+// wa.me needs the international number with no '+' and no leading zero.
+const SUPPORT_WHATSAPP = '254112159006';
 
 const LOGO = 'https://pub-6e116d83d30d40c7b5583e078cd66cdf.r2.dev/Chukua_Ticket_Logo_2.png';
 
 export default function Footer() {
   return (
     <footer style={{
-      borderTop: '1px solid var(--ct-border)',
-      background: 'var(--ct-dark)',
+      borderTop: '1px solid var(--border)',
+      background: 'var(--bg)',
       padding: '60px 0 32px',
       marginTop: 80,
     }}>
@@ -18,7 +25,7 @@ export default function Footer() {
           <div>
             <img src={LOGO} alt="Chukua Ticket" style={{ height: 40, marginBottom: 16 }}
               onError={e => { e.target.style.display='none'; }} />
-            <p style={{ color: 'var(--ct-grey)', fontSize: 14, lineHeight: 1.7, maxWidth: 280 }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.7, maxWidth: 280 }}>
               Kenya's smartest event ticketing platform. Discover, book, and manage events with confidence.
             </p>
             <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
@@ -31,11 +38,11 @@ export default function Footer() {
                 <a key={i} href={s.href} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   width: 36, height: 36, borderRadius: 8,
-                  background: 'var(--ct-dark-3)', border: '1px solid var(--ct-border)',
-                  color: 'var(--ct-grey)', transition: 'all 0.2s',
+                  background: 'var(--bg-3)', border: '1px solid var(--border)',
+                  color: 'var(--text-muted)', transition: 'all 0.2s',
                 }}
                 onMouseEnter={e => { e.currentTarget.style.color='var(--ct-orange)'; e.currentTarget.style.borderColor='var(--ct-orange)'; }}
-                onMouseLeave={e => { e.currentTarget.style.color='var(--ct-grey)'; e.currentTarget.style.borderColor='var(--ct-border)'; }}
+                onMouseLeave={e => { e.currentTarget.style.color='var(--text-muted)'; e.currentTarget.style.borderColor='var(--border)'; }}
                 >{s.icon}</a>
               ))}
             </div>
@@ -43,46 +50,69 @@ export default function Footer() {
 
           {/* Links */}
           <div>
-            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ct-grey)', marginBottom: 16 }}>Explore</h4>
-            {['Discover Events', 'Create Event', 'How It Works', 'Pricing'].map(l => (
+            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 16 }}>Explore</h4>
+            {[
+              ['Discover Events', '/events'],
+              ['Live Map', '/map'],
+              ['Create Event', '/organiser/create-event'],
+              ['How It Works', '/how-it-works'],
+            ].map(([l, to]) => (
               <div key={l} style={{ marginBottom: 10 }}>
-                <Link to="#" style={{ color: 'var(--ct-grey-light)', fontSize: 14, transition: 'color 0.2s' }}
-                  onMouseEnter={e => e.target.style.color='var(--ct-white)'}
-                  onMouseLeave={e => e.target.style.color='var(--ct-grey-light)'}
+                <Link to={to} style={{ color: 'var(--text-2)', fontSize: 14, transition: 'color 0.2s' }}
+                  onMouseEnter={e => e.target.style.color='var(--text)'}
+                  onMouseLeave={e => e.target.style.color='var(--text-2)'}
                 >{l}</Link>
               </div>
             ))}
           </div>
 
           <div>
-            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ct-grey)', marginBottom: 16 }}>Organisers</h4>
-            {['Dashboard', 'Analytics', 'Ticket Types', 'Promotions', 'Gate Scanner'].map(l => (
+            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 16 }}>Organisers</h4>
+            {[
+              ['Dashboard', '/organiser'],
+              ['Create Event', '/organiser/create-event'],
+              ['Payout Setup', '/organiser/setup-payout'],
+              ['Sign In', '/login'],
+            ].map(([l, to]) => (
               <div key={l} style={{ marginBottom: 10 }}>
-                <Link to="#" style={{ color: 'var(--ct-grey-light)', fontSize: 14, transition: 'color 0.2s' }}
-                  onMouseEnter={e => e.target.style.color='var(--ct-white)'}
-                  onMouseLeave={e => e.target.style.color='var(--ct-grey-light)'}
+                <Link to={to} style={{ color: 'var(--text-2)', fontSize: 14, transition: 'color 0.2s' }}
+                  onMouseEnter={e => e.target.style.color='var(--text)'}
+                  onMouseLeave={e => e.target.style.color='var(--text-2)'}
                 >{l}</Link>
               </div>
             ))}
           </div>
 
           <div>
-            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ct-grey)', marginBottom: 16 }}>Company</h4>
-            {['About Us', 'Blog', 'Careers', 'Privacy Policy', 'Terms of Service'].map(l => (
+            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 16 }}>Company</h4>
+            {[
+              ['Privacy Policy', '/privacy'],
+              ['Terms of Service', '/terms'],
+            ].map(([l, to]) => (
               <div key={l} style={{ marginBottom: 10 }}>
-                <Link to="#" style={{ color: 'var(--ct-grey-light)', fontSize: 14, transition: 'color 0.2s' }}
-                  onMouseEnter={e => e.target.style.color='var(--ct-white)'}
-                  onMouseLeave={e => e.target.style.color='var(--ct-grey-light)'}
+                <Link to={to} style={{ color: 'var(--text-2)', fontSize: 14, transition: 'color 0.2s' }}
+                  onMouseEnter={e => e.target.style.color='var(--text)'}
+                  onMouseLeave={e => e.target.style.color='var(--text-2)'}
                 >{l}</Link>
               </div>
             ))}
-            <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <a href="mailto:hello@chukuaticket.co.ke" style={{ display: 'flex', gap: 8, alignItems: 'center', color: 'var(--ct-grey)', fontSize: 13 }}>
-                <Mail size={14} /> hello@chukuaticket.co.ke
-              </a>
-              <a href="tel:+254700000000" style={{ display: 'flex', gap: 8, alignItems: 'center', color: 'var(--ct-grey)', fontSize: 13 }}>
-                <Phone size={14} /> +254 700 000 000
-              </a>
+            <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {[
+                { icon: <Mail size={14} />,          label: SUPPORT_EMAIL,          href: `mailto:${SUPPORT_EMAIL}` },
+                { icon: <Phone size={14} />,         label: SUPPORT_PHONE_DISPLAY,  href: `tel:${SUPPORT_PHONE_TEL}` },
+                { icon: <MessageCircle size={14} />, label: 'WhatsApp us',          href: `https://wa.me/${SUPPORT_WHATSAPP}`, external: true },
+              ].map(c => (
+                <a
+                  key={c.label}
+                  href={c.href}
+                  {...(c.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                  style={{ display: 'flex', gap: 8, alignItems: 'center', color: 'var(--text-muted)', fontSize: 13, transition: 'color 0.2s' }}
+                  onMouseEnter={e => e.currentTarget.style.color='var(--ct-orange)'}
+                  onMouseLeave={e => e.currentTarget.style.color='var(--text-muted)'}
+                >
+                  {c.icon} {c.label}
+                </a>
+              ))}
             </div>
           </div>
         </div>
@@ -90,10 +120,10 @@ export default function Footer() {
         <div className="divider" style={{ margin: '0 0 24px' }} />
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-          <p style={{ color: 'var(--ct-grey)', fontSize: 13 }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
             © {new Date().getFullYear()} Chukua Ticket Ltd. All rights reserved. Kenya 🇰🇪
           </p>
-          <p style={{ color: 'var(--ct-grey)', fontSize: 13 }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
             Built for Kenya. Expanding across Africa.
           </p>
         </div>
