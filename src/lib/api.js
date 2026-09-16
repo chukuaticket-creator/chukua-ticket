@@ -268,50 +268,36 @@ export async function getPublicMapEvents() {
 
 // ─── Tickets ────────────────────────────────────────────────────
 // Written as 'pending' BEFORE Paystack opens, so the webhook always has a row
-// to mark paid. Only the webhook may flip it to 'paid' — never the browser.
-export async function createOrder({ eventId, organiserId, reference, buyer, items, subtotal, subaccountCode }) {
-  const { commission, organiserReceives } = calcFees(subtotal);
-
-  const order = await sbRequest('/rest/v1/orders', {
+// to mark paid. Goes through the create_order function rather than a direct
+// insert: the database prices the order from ticket_types, so the amount can't
+// be altered in the browser.
+export async function createOrder({ eventId, reference, buyer, items }) {
+  const data = await sbRequest('/rest/v1/rpc/create_order', {
     method: 'POST',
     auth: true,
-    headers: { Prefer: 'return=representation' },
     body: JSON.stringify({
-      event_id: eventId,
-      organiser_id: organiserId || null,
-      buyer_email: buyer.email,
-      buyer_name: buyer.name,
-      buyer_phone: buyer.phone || null,
-      subtotal,
-      commission,
-      organiser_receives: organiserReceives,
-      status: 'pending',
-      paystack_ref: reference,
-      subaccount_code: subaccountCode || null,
+      p_event_id: eventId,
+      p_reference: reference,
+      p_buyer_name: buyer.name,
+      p_buyer_email: buyer.email,
+      p_buyer_phone: buyer.phone || null,
+      p_items: (items || []).map(i => ({ ticket_type_id: i.ticketId, quantity: i.qty })),
     }),
   });
-  if (order?.error) return order;
 
-  const row = Array.isArray(order) ? order[0] : order;
-  if (!row?.id) return { error: 'We could not start your order. Please try again.' };
+  if (data?.error) return data;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.order_id) return { error: 'We could not start your order. Please try again.' };
 
-  const lines = (items || []).map(i => ({
-    order_id: row.id,
-    ticket_type_id: i.ticketId,
-    quantity: i.qty,
-    unit_price: i.price,
-  }));
-
-  if (lines.length) {
-    const res = await sbRequest('/rest/v1/order_items', {
-      method: 'POST',
-      auth: true,
-      body: JSON.stringify(lines),
-    });
-    if (res?.error) return res;
-  }
-
-  return { orderId: row.id, reference };
+  return {
+    orderId: row.order_id,
+    reference,
+    // Authoritative amounts — charge these, not anything computed client-side.
+    subtotal: row.subtotal,
+    commission: row.commission,
+    organiserReceives: row.organiser_receives,
+    subaccountCode: row.subaccount_code,
+  };
 }
 
 // Free events only. The database refuses this for any order with a subtotal,
