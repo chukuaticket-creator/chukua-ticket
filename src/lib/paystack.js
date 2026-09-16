@@ -1,47 +1,56 @@
 // Paystack Integration
 // Docs: https://paystack.com/docs/payment/popup
+//
+// This file owns the Paystack popup ONLY. Fee maths lives in src/lib/api.js
+// (`calcFees`) so there is exactly one source of truth — an earlier duplicate
+// `calculateFees` here silently overrode the api.js version and charged the
+// attendee the old ticket-price + 7%. It has been removed deliberately: if any
+// file still imports it, that import will fail loudly instead of quietly
+// billing the wrong amount.
 
 const PAYSTACK_PUBLIC_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_YOUR_KEY_HERE';
-const COMMISSION_RATE = 0.07;
 
 /**
- * Calculate fees
- * @param {number} subtotal - Total ticket cost before fees (KES)
- * @returns {{ subtotal, commission, total }}
- */
-export function calculateFees(subtotal) {
-  const commission = Math.round(subtotal * COMMISSION_RATE);
-  const total = subtotal + commission;
-  return { subtotal, commission, total };
-}
-
-/**
- * Open Paystack popup
- * @param {Object} opts
- * @param {string} opts.email
- * @param {number} opts.amountKES  - in KES (we convert to kobo)
- * @param {string} opts.reference  - unique order ref
- * @param {string} opts.eventTitle
+ * Open Paystack popup.
+ *
+ * Fee model: the attendee is charged the exact ticket price. The organiser's
+ * 7% is taken by splitting the transaction, not by adding to the charge.
+ *
+ * @param {Object}   opts
+ * @param {string}   opts.email
+ * @param {number}   opts.amountKES       - what the attendee pays, in KES (converted to cents here)
+ * @param {string}   opts.reference       - unique order ref
+ * @param {string}   opts.eventTitle
+ * @param {string}  [opts.subaccount]     - organiser's Paystack subaccount_code. Omit and the
+ *                                          full amount lands in the main account (no split).
+ * @param {number}  [opts.platformFeeKES] - Chukua Ticket's cut in KES (calcFees().commission)
+ * @param {string}  [opts.bearer]         - who pays Paystack's own processing fee.
+ *                                          'subaccount' (default) = the organiser, consistent
+ *                                          with the organiser-pays-fees model. 'account' = us.
  * @param {Function} opts.onSuccess
  * @param {Function} opts.onClose
  */
-export function openPaystack({ email, amountKES, reference, eventTitle, onSuccess, onClose }) {
-  // Load Paystack script dynamically if not already loaded
+export function openPaystack(opts) {
   if (!window.PaystackPop) {
     const script = document.createElement('script');
     script.src = 'https://js.paystack.co/v1/inline.js';
-    script.onload = () => _initPaystack({ email, amountKES, reference, eventTitle, onSuccess, onClose });
+    script.onload = () => _initPaystack(opts);
+    script.onerror = () => opts.onClose && opts.onClose();
     document.head.appendChild(script);
     return;
   }
-  _initPaystack({ email, amountKES, reference, eventTitle, onSuccess, onClose });
+  _initPaystack(opts);
 }
 
-function _initPaystack({ email, amountKES, reference, eventTitle, onSuccess, onClose }) {
-  const handler = window.PaystackPop.setup({
+function _initPaystack({
+  email, amountKES, reference, eventTitle,
+  subaccount, platformFeeKES = 0, bearer = 'subaccount',
+  onSuccess, onClose,
+}) {
+  const config = {
     key: PAYSTACK_PUBLIC_KEY,
     email,
-    amount: amountKES * 100, // Paystack uses kobo/cents
+    amount: Math.round(amountKES * 100), // Paystack works in the minor unit
     currency: 'KES',
     ref: reference,
     metadata: {
@@ -49,31 +58,35 @@ function _initPaystack({ email, amountKES, reference, eventTitle, onSuccess, onC
         { display_name: 'Event', variable_name: 'event', value: eventTitle },
       ],
     },
-    callback: (response) => {
-      onSuccess && onSuccess(response);
-    },
-    onClose: () => {
-      onClose && onClose();
-    },
-  });
-  handler.openIframe();
+    callback: (response) => { onSuccess && onSuccess(response); },
+    onClose: () => { onClose && onClose(); },
+  };
+
+  // Split payment: organiser's subaccount is settled directly by Paystack,
+  // our 7% is retained in the main account. No manual transfers.
+  if (subaccount) {
+    config.subaccount = subaccount;
+    config.bearer = bearer;
+    if (platformFeeKES > 0) {
+      config.transaction_charge = Math.round(platformFeeKES * 100);
+    }
+  }
+
+  window.PaystackPop.setup(config).openIframe();
 }
 
-/**
- * Generate a unique order reference
- */
+/** Generate a unique order reference */
 export function generateRef() {
-  return `CT-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+  return `CT-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 }
 
 /**
- * Verify payment on backend (call your own API)
- * This is a placeholder — implement server-side verification
+ * Payment verification MUST happen server-side with the secret key.
+ * In this build that is the Supabase `verify-payment` edge function, triggered
+ * by the Paystack `charge.success` webhook. Never trust a client-side result.
  */
 export async function verifyPayment(reference) {
-  // You MUST verify server-side using Paystack's secret key
-  // Never verify client-side in production
-  // POST to your backend: /api/verify-payment
-  console.log('Verify payment reference:', reference);
-  return { verified: true, reference };
+  const res = await fetch(`/api/tickets/verify/${reference}`).catch(() => null);
+  if (!res || !res.ok) return { verified: false, reference };
+  return res.json();
 }
