@@ -291,6 +291,7 @@ export async function createOrder({ eventId, reference, buyer, items }) {
 
   return {
     orderId: row.order_id,
+    ticketCode: row.ticket_code,
     reference,
     // Authoritative amounts — charge these, not anything computed client-side.
     subtotal: row.subtotal,
@@ -441,6 +442,71 @@ export async function logout() {
     });
   }
   clearSession();
+}
+
+// ─── Gate check-in ──────────────────────────────────────────────
+// Search by ticket code, email or phone. Scoped server-side to the caller's
+// own events.
+export async function findTickets(query) {
+  const data = await sbRequest('/rest/v1/rpc/find_tickets', {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ p_query: query }),
+  });
+  if (!data || data.error || !Array.isArray(data)) return [];
+  return data.map(t => ({
+    ticketCode: t.ticket_code,
+    buyerName: t.buyer_name,
+    buyerEmail: t.buyer_email,
+    buyerPhone: t.buyer_phone,
+    eventTitle: t.event_title,
+    eventId: t.event_id,
+    status: t.status,
+    checkedIn: t.checked_in,
+    checkedInAt: t.checked_in_at,
+    tickets: Number(t.tickets) || 0,
+    createdAt: t.created_at,
+  }));
+}
+
+export async function checkInTicket(ticketCode) {
+  const data = await sbRequest('/rest/v1/rpc/check_in_ticket', {
+    method: 'POST',
+    auth: true,
+    body: JSON.stringify({ p_ticket_code: ticketCode }),
+  });
+  if (!data || data.error) return { ok: false, message: data?.error || 'Check-in failed.' };
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return { ok: false, message: 'No ticket found with that code' };
+  return {
+    ok: row.ok,
+    message: row.message,
+    buyerName: row.buyer_name,
+    eventTitle: row.event_title,
+    checkedInAt: row.checked_in_at,
+  };
+}
+
+// Attendee-facing: look up your own ticket with just the code.
+export async function getTicket(ticketCode) {
+  const data = await sbRequest('/rest/v1/rpc/get_ticket', {
+    method: 'POST',
+    body: JSON.stringify({ p_ticket_code: ticketCode }),
+  });
+  if (!data || data.error) return null;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return null;
+  return {
+    ticketCode: row.ticket_code,
+    buyerName: row.buyer_name,
+    eventTitle: row.event_title,
+    eventDate: row.event_date,
+    eventTime: row.event_time,
+    venue: row.venue,
+    city: row.city,
+    status: row.status,
+    checkedIn: row.checked_in,
+  };
 }
 
 // ─── Profile & payouts ──────────────────────────────────────────
