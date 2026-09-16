@@ -12,8 +12,67 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY || '';
 
 export const SUPABASE_READY = Boolean(SUPABASE_URL && SUPABASE_KEY);
 
+const SESSION_KEY = 'ct_session';
+
+export function getSession() {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch { return null; }
+}
+
+// Supabase access tokens expire after ~1 hour. The refresh token is what lets
+// us renew silently — storing only the access token is why sessions were
+// dropping mid-flow.
+export function saveSession(data) {
+  if (!data?.access_token) return null;
+  const session = {
+    access_token: data.access_token,
+    refresh_token: data.refresh_token || null,
+    expires_at: Date.now() + ((data.expires_in ?? 3600) * 1000),
+  };
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    localStorage.setItem('ct_token', session.access_token); // legacy readers
+  } catch {}
+  return session;
+}
+
+export function clearSession() {
+  try {
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem('ct_token');
+  } catch {}
+}
+
 export function authToken() {
+  const s = getSession();
+  if (s?.access_token) return s.access_token;
   try { return localStorage.getItem('ct_token'); } catch { return null; }
+}
+
+// Returns a token that is valid right now, renewing it if it's about to lapse.
+let refreshInFlight = null;
+async function ensureToken() {
+  const s = getSession();
+  if (!s?.access_token) return authToken();
+
+  const stillFresh = s.expires_at && Date.now() < s.expires_at - 60_000;
+  if (stillFresh || !s.refresh_token) return s.access_token;
+
+  // Collapse concurrent refreshes — the dashboard fires four calls at once.
+  if (!refreshInFlight) {
+    refreshInFlight = sbRequest('/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: s.refresh_token }),
+    }).then(data => {
+      refreshInFlight = null;
+      if (data?.error || !data?.access_token) {
+        clearSession();
+        return null;
+      }
+      saveSession(data);
+      return data.access_token;
+    });
+  }
+  return refreshInFlight;
 }
 
 // Unlike `request` below, this surfaces the real error text — auth needs to tell
@@ -23,14 +82,19 @@ async function sbRequest(path, opts = {}) {
     return { error: 'Sign-in is not configured yet. Please try again later.' };
   }
   try {
-    const res = await fetch(`${SUPABASE_URL}${path}`, {
-      ...opts,
-      headers: {
-        apikey: SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        ...opts.headers,
-      },
-    });
+    const { auth, headers: extraHeaders, ...rest } = opts;
+    const headers = {
+      apikey: SUPABASE_KEY,
+      'Content-Type': 'application/json',
+      ...extraHeaders,
+    };
+    // Resolved here, after any refresh, so a renewed token is always the one sent.
+    if (auth) {
+      const token = await ensureToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${SUPABASE_URL}${path}`, { ...rest, headers });
     const text = await res.text();
     const data = text ? JSON.parse(text) : null;
     if (!res.ok) {
@@ -46,16 +110,11 @@ async function sbRequest(path, opts = {}) {
 }
 
 // ─── Shared helpers ─────────────────────────────────────────────
-function sbAuth(extra = {}) {
-  const token = authToken();
-  return token ? { Authorization: `Bearer ${token}`, ...extra } : extra;
-}
-
 // The signed-in user's id, needed to stamp organiser_id on inserts.
 export async function getAuthUserId() {
   const token = authToken();
   if (!token) return null;
-  const data = await sbRequest('/auth/v1/user', { headers: sbAuth() });
+  const data = await sbRequest('/auth/v1/user', { auth: true });
   return data?.error ? null : data?.id || null;
 }
 
@@ -118,7 +177,7 @@ export async function getEvents(params = {}) {
   if (params.city) filters.push(`city=eq.${params.city}`);
   if (params.free) filters.push('is_free=eq.true');
   if (params.limit) filters.push(`limit=${params.limit}`);
-  const data = await sbRequest(`/rest/v1/events?${filters.join('&')}`, { headers: sbAuth() });
+  const data = await sbRequest(`/rest/v1/events?${filters.join('&')}`, { auth: true });
   if (!data || data.error || !Array.isArray(data)) return [];
   return data.map(mapEvent);
 }
@@ -126,7 +185,7 @@ export async function getEvents(params = {}) {
 export async function getEvent(id) {
   const data = await sbRequest(
     `/rest/v1/events?select=${EVENT_SELECT}&id=eq.${id}&limit=1`,
-    { headers: sbAuth() },
+    { auth: true },
   );
   if (!data || data.error || !Array.isArray(data)) return null;
   return data.length ? mapEvent(data[0]) : null;
@@ -164,7 +223,8 @@ export async function createEvent(payload) {
 
   const created = await sbRequest('/rest/v1/events', {
     method: 'POST',
-    headers: sbAuth({ Prefer: 'return=representation' }),
+    auth: true,
+    headers: { Prefer: 'return=representation' },
     body: JSON.stringify(row),
   });
   if (created?.error) return created;
@@ -184,7 +244,8 @@ export async function createEvent(payload) {
   if (tiers.length) {
     const tix = await sbRequest('/rest/v1/ticket_types', {
       method: 'POST',
-      headers: sbAuth({ Prefer: 'return=representation' }),
+      auth: true,
+    headers: { Prefer: 'return=representation' },
       body: JSON.stringify(tiers),
     });
     // The event exists but has no tiers — say so rather than reporting success.
@@ -199,7 +260,7 @@ export async function createEvent(payload) {
 export async function getPublicMapEvents() {
   const data = await sbRequest(
     `/rest/v1/events?select=${EVENT_SELECT}&is_public=eq.true&lat=not.is.null&lng=not.is.null`,
-    { headers: sbAuth() },
+    { auth: true },
   );
   if (!data || data.error || !Array.isArray(data)) return [];
   return data.map(mapEvent);
@@ -213,7 +274,8 @@ export async function createOrder({ eventId, organiserId, reference, buyer, item
 
   const order = await sbRequest('/rest/v1/orders', {
     method: 'POST',
-    headers: sbAuth({ Prefer: 'return=representation' }),
+    auth: true,
+    headers: { Prefer: 'return=representation' },
     body: JSON.stringify({
       event_id: eventId,
       organiser_id: organiserId || null,
@@ -243,7 +305,7 @@ export async function createOrder({ eventId, organiserId, reference, buyer, item
   if (lines.length) {
     const res = await sbRequest('/rest/v1/order_items', {
       method: 'POST',
-      headers: sbAuth(),
+      auth: true,
       body: JSON.stringify(lines),
     });
     if (res?.error) return res;
@@ -257,7 +319,7 @@ export async function createOrder({ eventId, organiserId, reference, buyer, item
 export async function completeFreeOrder(reference) {
   const res = await sbRequest('/rest/v1/rpc/complete_free_order', {
     method: 'POST',
-    headers: sbAuth(),
+    auth: true,
     body: JSON.stringify({ p_reference: reference }),
   });
   return res?.error ? res : { ok: true };
@@ -271,7 +333,7 @@ export async function purchaseTicket(payload) {
 export async function verifyTicket(ref) {
   const data = await sbRequest('/rest/v1/rpc/verify_ticket', {
     method: 'POST',
-    headers: sbAuth(),
+    auth: true,
     body: JSON.stringify({ p_reference: ref }),
   });
   if (!data || data.error) return { valid: false, error: data?.error || 'Ticket not found.' };
@@ -313,7 +375,7 @@ export async function getOrganiserEvents() {
   if (!organiserId) return [];
   const data = await sbRequest(
     `/rest/v1/events?select=${EVENT_SELECT}&organiser_id=eq.${organiserId}&order=date.desc`,
-    { headers: sbAuth() },
+    { auth: true },
   );
   if (!data || data.error || !Array.isArray(data)) return [];
   return data.map(mapEvent);
@@ -327,7 +389,7 @@ export async function getOrganiserPayouts() {
   const data = await sbRequest(
     `/rest/v1/orders?select=id,paystack_ref,organiser_receives,paid_at,status,events(title)`
     + `&organiser_id=eq.${organiserId}&status=eq.paid&order=paid_at.desc`,
-    { headers: sbAuth() },
+    { auth: true },
   );
   if (!data || data.error || !Array.isArray(data)) return [];
   return data.map(o => ({
@@ -362,6 +424,7 @@ export async function login(email, password) {
     body: JSON.stringify({ email, password }),
   });
   if (data?.error) return data;
+  saveSession(data);
   return shapeSession(data);
 }
 
@@ -376,6 +439,7 @@ export async function register({ name, email, phone, password, role, orgName }) 
     }),
   });
   if (data?.error) return data;
+  saveSession(data);
   const session = shapeSession(data);
   // With "Confirm email" enabled, Supabase returns the user but no token until
   // they click the link. The UI already tells them to check their inbox.
@@ -390,7 +454,7 @@ export async function logout() {
       headers: { Authorization: `Bearer ${token}` },
     });
   }
-  try { localStorage.removeItem('ct_token'); } catch {}
+  clearSession();
 }
 
 // ─── Profile & payouts ──────────────────────────────────────────
@@ -425,14 +489,14 @@ export async function createSubaccount(payload) {
   // Edge function: the Paystack secret key must never reach the browser.
   return sbRequest('/functions/v1/create-subaccount', {
     method: 'POST',
-    headers: sbAuth(),
+    auth: true,
     body: JSON.stringify(payload),
   });
 }
 
 // ─── Reactions ──────────────────────────────────────────────────
 export async function getReactions(eventId) {
-  const data = await sbRequest(`/rest/v1/reactions?select=emoji,count&event_id=eq.${eventId}`, { headers: sbAuth() });
+  const data = await sbRequest(`/rest/v1/reactions?select=emoji,count&event_id=eq.${eventId}`, { auth: true });
   if (!data || data.error || !Array.isArray(data)) return {};
   return Object.fromEntries(data.map(r => [r.emoji, r.count]));
 }
@@ -440,7 +504,7 @@ export async function getReactions(eventId) {
 export async function sendReaction(eventId, emoji) {
   return sbRequest('/rest/v1/rpc/add_reaction', {
     method: 'POST',
-    headers: sbAuth(),
+    auth: true,
     body: JSON.stringify({ p_event_id: eventId, p_emoji: emoji }),
   });
 }
@@ -449,7 +513,7 @@ export async function sendReaction(eventId, emoji) {
 export async function getMessages(eventId) {
   const data = await sbRequest(
     `/rest/v1/messages?select=*&event_id=eq.${eventId}&order=created_at.asc`,
-    { headers: sbAuth() },
+    { auth: true },
   );
   if (!data || data.error || !Array.isArray(data)) return [];
   return data.map(m => ({
@@ -464,7 +528,7 @@ export async function getMessages(eventId) {
 export async function sendMessage(eventId, text, sender = {}) {
   return sbRequest('/rest/v1/messages', {
     method: 'POST',
-    headers: sbAuth(),
+    auth: true,
     body: JSON.stringify({
       event_id: eventId,
       text,
