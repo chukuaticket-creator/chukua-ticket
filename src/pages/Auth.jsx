@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, CheckCircle2 } from 'lucide-react';
+import { login as apiLogin, register as apiRegister } from '../lib/api';
+import { useAuth } from '../lib/auth';
 
 const LOGO = 'https://pub-6e116d83d30d40c7b5583e078cd66cdf.r2.dev/Chukua_Ticket_Logo_2.png';
 
 export function Login() {
   const navigate = useNavigate();
+  const { signIn } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -17,15 +20,16 @@ export function Login() {
     e.preventDefault();
     setLoading(true);
     setError('');
-    // TODO: call your auth API
-    await new Promise(r => setTimeout(r, 1000));
-    // Demo: any credentials work
-    if (form.email && form.password) {
-      navigate('/organiser');
-    } else {
-      setError('Please enter your email and password.');
-    }
+
+    const res = await apiLogin(form.email, form.password);
     setLoading(false);
+
+    if (!res || res.error) {
+      setError(res?.error || 'That email and password combination didn’t work. Try again.');
+      return;
+    }
+    signIn(res);
+    navigate(res.user?.role === 'organiser' ? '/organiser' : '/events');
   };
 
   return (
@@ -35,12 +39,12 @@ export function Login() {
           <img src={LOGO} alt="Chukua Ticket" style={{ height: 44, margin: '0 auto 20px' }}
             onError={e => { e.target.style.display = 'none'; }} />
           <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 28 }}>Welcome back</h1>
-          <p style={{ color: 'var(--ct-grey)', marginTop: 6 }}>Sign in to your account</p>
+          <p style={{ color: 'var(--text-muted)', marginTop: 6 }}>Sign in to your account</p>
         </div>
 
         <div className="card" style={{ padding: 32 }}>
           {error && (
-            <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--ct-danger)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--ct-danger)', marginBottom: 20 }}>
+            <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--danger)', marginBottom: 20 }}>
               {error}
             </div>
           )}
@@ -65,7 +69,7 @@ export function Login() {
                   style={{ paddingRight: 44 }}
                 />
                 <button type="button" onClick={() => setShowPw(!showPw)}
-                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--ct-grey)', cursor: 'pointer' }}>
+                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
                   {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
@@ -78,7 +82,7 @@ export function Login() {
 
           <div className="divider" />
 
-          <p style={{ textAlign: 'center', fontSize: 14, color: 'var(--ct-grey)' }}>
+          <p style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-muted)' }}>
             Don't have an account?{' '}
             <Link to="/register" style={{ color: 'var(--ct-orange)', fontWeight: 600 }}>Sign up free</Link>
           </p>
@@ -90,10 +94,12 @@ export function Login() {
 
 export function Register() {
   const navigate = useNavigate();
+  const { signIn } = useAuth();
   const [tab, setTab] = useState('attendee'); // attendee | organiser
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', orgName: '' });
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [done, setDone] = useState(false);
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
@@ -101,9 +107,23 @@ export function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    // TODO: call your auth/register API
-    await new Promise(r => setTimeout(r, 1200));
+    setError('');
+
+    const res = await apiRegister({
+      name: form.name,
+      email: form.email,
+      phone: form.phone,
+      password: form.password,
+      role: tab,
+      orgName: tab === 'organiser' ? form.orgName : undefined,
+    });
     setLoading(false);
+
+    if (!res || res.error) {
+      setError(res?.error || 'We couldn’t create your account. Please try again.');
+      return;
+    }
+    signIn(res);
     setDone(true);
   };
 
@@ -111,13 +131,18 @@ export function Register() {
     return (
       <div className="page-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
         <div style={{ textAlign: 'center', maxWidth: 420, padding: 24 }}>
-          <CheckCircle2 size={60} style={{ color: 'var(--ct-success)', margin: '0 auto 20px' }} />
+          <CheckCircle2 size={60} style={{ color: 'var(--success)', margin: '0 auto 20px' }} />
           <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 28, marginBottom: 8 }}>You're in!</h2>
-          <p style={{ color: 'var(--ct-grey)', marginBottom: 24 }}>
+          <p style={{ color: 'var(--text-muted)', marginBottom: 24 }}>
             Welcome, {form.name.split(' ')[0]}! Check your email to verify your account.
           </p>
-          <button className="btn btn-primary btn-lg" onClick={() => navigate(tab === 'organiser' ? '/organiser' : '/events')}>
-            {tab === 'organiser' ? 'Go to Dashboard' : 'Discover Events'}
+          {tab === 'organiser' && (
+            <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
+              One more step: add your M-Pesa or bank details so ticket revenue can reach you.
+            </p>
+          )}
+          <button className="btn btn-primary btn-lg" onClick={() => navigate(tab === 'organiser' ? '/organiser/setup-payout' : '/events')}>
+            {tab === 'organiser' ? 'Set Up Payouts' : 'Discover Events'}
           </button>
         </div>
       </div>
@@ -131,18 +156,18 @@ export function Register() {
           <img src={LOGO} alt="Chukua Ticket" style={{ height: 44, margin: '0 auto 20px' }}
             onError={e => { e.target.style.display = 'none'; }} />
           <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 28 }}>Create your account</h1>
-          <p style={{ color: 'var(--ct-grey)', marginTop: 6 }}>Free to join. Always.</p>
+          <p style={{ color: 'var(--text-muted)', marginTop: 6 }}>Free to join. Always.</p>
         </div>
 
         {/* Tab toggle */}
-        <div style={{ display: 'flex', background: 'var(--ct-dark-2)', border: '1px solid var(--ct-border)', borderRadius: 12, padding: 4, marginBottom: 24 }}>
+        <div style={{ display: 'flex', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 12, padding: 4, marginBottom: 24 }}>
           {['attendee', 'organiser'].map(t => (
             <button key={t} type="button"
               onClick={() => setTab(t)}
               style={{
                 flex: 1, padding: '10px', borderRadius: 9, border: 'none',
                 background: tab === t ? 'var(--ct-orange)' : 'transparent',
-                color: tab === t ? 'white' : 'var(--ct-grey)',
+                color: tab === t ? 'white' : 'var(--text-muted)',
                 fontWeight: 600, fontSize: 14, cursor: 'pointer', transition: 'all 0.2s',
                 fontFamily: 'var(--font-display)',
               }}>
@@ -152,6 +177,12 @@ export function Register() {
         </div>
 
         <div className="card" style={{ padding: 32 }}>
+          {error && (
+            <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--danger)', marginBottom: 20 }}>
+              {error}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div className="form-group">
               <label className="form-label">Full Name *</label>
@@ -188,13 +219,13 @@ export function Register() {
                   style={{ paddingRight: 44 }}
                 />
                 <button type="button" onClick={() => setShowPw(!showPw)}
-                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--ct-grey)', cursor: 'pointer' }}>
+                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
                   {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
 
-            <p style={{ fontSize: 12, color: 'var(--ct-grey)' }}>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               By signing up you agree to Chukua Ticket's{' '}
               <Link to="/terms" style={{ color: 'var(--ct-orange)' }}>Terms</Link> and{' '}
               <Link to="/privacy" style={{ color: 'var(--ct-orange)' }}>Privacy Policy</Link>.
@@ -207,7 +238,7 @@ export function Register() {
 
           <div className="divider" />
 
-          <p style={{ textAlign: 'center', fontSize: 14, color: 'var(--ct-grey)' }}>
+          <p style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-muted)' }}>
             Already have an account?{' '}
             <Link to="/login" style={{ color: 'var(--ct-orange)', fontWeight: 600 }}>Sign in</Link>
           </p>
