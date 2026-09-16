@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { getProfile } from './api';
+import { getProfile, getSession, clearSession, saveSession } from './api';
 
 // ─── Auth context ────────────────────────────────────────────────
 // Interim token-based auth. When the Supabase backend lands, replace the body
@@ -24,7 +24,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    if (!localStorage.getItem('ct_token')) {
+    if (!getSession()?.access_token) {
       setUser(null);
       setLoading(false);
       return null;
@@ -38,13 +38,15 @@ export function AuthProvider({ children }) {
   useEffect(() => { refresh(); }, [refresh]);
 
   const signIn = useCallback((res) => {
-    if (res?.token) localStorage.setItem('ct_token', res.token);
-    if (res?.user) setUser(res.user);
+    // api.login/register already persisted the session; this just mirrors it
+    // into React state so guards and the navbar update without a reload.
+    if (res?.session) saveSession(res.session);
+    if (res?.user && res?.token) setUser(res.user);
     else refresh();
   }, [refresh]);
 
   const signOut = useCallback(() => {
-    localStorage.removeItem('ct_token');
+    clearSession();
     setUser(null);
   }, []);
 
