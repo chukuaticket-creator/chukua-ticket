@@ -100,6 +100,7 @@ export function Register() {
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [needsConfirm, setNeedsConfirm] = useState(false);
   const [done, setDone] = useState(false);
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
@@ -124,6 +125,10 @@ export function Register() {
       return;
     }
     signIn(res);
+    // With "Confirm email" on, Supabase creates the account but issues no
+    // session until the link is clicked. Sending them to a signed-in page
+    // here is what produced "Please sign in again".
+    setNeedsConfirm(Boolean(res.needsEmailConfirmation));
     setDone(true);
   };
 
@@ -133,16 +138,24 @@ export function Register() {
         <div style={{ textAlign: 'center', maxWidth: 420, padding: 24 }}>
           <CheckCircle2 size={60} style={{ color: 'var(--success)', margin: '0 auto 20px' }} />
           <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 28, marginBottom: 8 }}>You're in!</h2>
-          <p style={{ color: 'var(--text-muted)', marginBottom: 24 }}>
-            Welcome, {form.name.split(' ')[0]}! Check your email to verify your account.
+          <p style={{ color: 'var(--text-muted)', marginBottom: 24, lineHeight: 1.7 }}>
+            {needsConfirm
+              ? `Welcome, ${form.name.split(' ')[0]}! We've sent a confirmation link to ${form.email}. Click it, then sign in to continue.`
+              : `Welcome, ${form.name.split(' ')[0]}! Your account is ready.`}
           </p>
-          {tab === 'organiser' && (
+          {!needsConfirm && tab === 'organiser' && (
             <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
               One more step: add your M-Pesa or bank details so ticket revenue can reach you.
             </p>
           )}
-          <button className="btn btn-primary btn-lg" onClick={() => navigate(tab === 'organiser' ? '/organiser/setup-payout' : '/events')}>
-            {tab === 'organiser' ? 'Set Up Payouts' : 'Discover Events'}
+          <button
+            className="btn btn-primary btn-lg"
+            onClick={() => {
+              if (needsConfirm) return navigate('/login');
+              navigate(tab === 'organiser' ? '/organiser/setup-payout' : '/events');
+            }}
+          >
+            {needsConfirm ? 'Go to Sign In' : (tab === 'organiser' ? 'Set Up Payouts' : 'Discover Events')}
           </button>
         </div>
       </div>
