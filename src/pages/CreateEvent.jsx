@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Image, CheckCircle2, ArrowRight, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Image, CheckCircle2, ArrowRight, ArrowLeft, AlertTriangle, Download, Copy, Check } from 'lucide-react';
 import { createEvent, getProfile } from '../lib/api';
+import { renderQR, downloadQR } from '../lib/qr';
 
 const STEPS = ['Event Details', 'Tickets', 'Media & Review'];
 
@@ -26,6 +27,9 @@ export default function CreateEvent() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
   const [profile, setProfile] = useState(null);
+  const [created, setCreated] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const qrRef = useRef(null);
 
   // Organisers need a Paystack subaccount before sales can be settled to them.
   useEffect(() => {
@@ -35,6 +39,26 @@ export default function CreateEvent() {
   }, []);
 
   const payoutReady = profile?.payoutActivated ?? profile?.payout_activated ?? false;
+  const eventUrl = created?.id ? `https://chukuaticket.com/events/${created.id}` : '';
+
+  useEffect(() => {
+    if (done && eventUrl) renderQR(qrRef.current, eventUrl, 200).catch(() => {});
+  }, [done, eventUrl]);
+
+  const copyEventLink = async () => {
+    try {
+      await navigator.clipboard.writeText(eventUrl);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = eventUrl;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const [form, setForm] = useState({
     title: '',
@@ -96,6 +120,7 @@ export default function CreateEvent() {
       setError(res?.error || 'We couldn’t publish your event. Check your details and try again.');
       return;
     }
+    setCreated(res.event || null);
     setDone(true);
   };
 
@@ -107,9 +132,42 @@ export default function CreateEvent() {
           <CheckCircle2 size={52} style={{ color: 'var(--success)', margin: '0 auto 20px' }} />
           <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 32, marginBottom: 8 }}>Event Created!</h2>
           <p style={{ color: 'var(--text-muted)', marginBottom: 8 }}>{form.title}</p>
-          <p style={{ color: 'var(--text-2)', marginBottom: 32, fontSize: 14 }}>
-            Your event is live and accepting tickets. Share the link to start selling.
+          <p style={{ color: 'var(--text-2)', marginBottom: 24, fontSize: 14 }}>
+            Your event is live and accepting tickets. Share the link or QR code to start selling.
           </p>
+
+          {eventUrl && (
+            <>
+              {/* White plate so the code still scans in dark mode. */}
+              <div style={{ background: '#fff', padding: 16, borderRadius: 14, display: 'inline-block', marginBottom: 16 }}>
+                <div ref={qrRef} />
+              </div>
+
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'var(--bg-2)', border: '1px solid var(--border)',
+                borderRadius: 10, padding: '10px 12px', marginBottom: 12,
+              }}>
+                <span style={{
+                  fontSize: 12, color: 'var(--text-2)', flex: 1, textAlign: 'left',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {eventUrl.replace('https://', '')}
+                </span>
+                <button className="btn btn-ghost btn-sm" onClick={copyEventLink} style={{ display: 'flex', gap: 5 }}>
+                  {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
+                </button>
+              </div>
+
+              <button
+                className="btn btn-secondary btn-block"
+                style={{ marginBottom: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                onClick={() => downloadQR(qrRef.current, `${(form.title || 'event').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-qr.png`, form.title)}
+              >
+                <Download size={14} /> Download QR poster
+              </button>
+            </>
+          )}
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
             <button className="btn btn-secondary" onClick={() => { setDone(false); setStep(0); setForm({ title:'',category:'',description:'',date:'',endDate:'',time:'',endTime:'',venue:'',address:'',city:'Nairobi',isFree:false,isPublic:true,maxAttendees:'',image:'',website:'',tags:'' }); setTickets([defaultTicket()]); }}>
               Create Another
