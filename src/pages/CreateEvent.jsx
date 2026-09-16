@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Image, CheckCircle2, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Plus, Trash2, Image, CheckCircle2, ArrowRight, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { createEvent, getProfile } from '../lib/api';
 
 const STEPS = ['Event Details', 'Tickets', 'Media & Review'];
 
@@ -23,6 +24,17 @@ export default function CreateEvent() {
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState('');
+  const [profile, setProfile] = useState(null);
+
+  // Organisers need a Paystack subaccount before sales can be settled to them.
+  useEffect(() => {
+    let active = true;
+    getProfile().then(p => { if (active) setProfile(p); });
+    return () => { active = false; };
+  }, []);
+
+  const payoutReady = profile?.payoutActivated ?? profile?.payout_activated ?? false;
 
   const [form, setForm] = useState({
     title: '',
@@ -60,11 +72,30 @@ export default function CreateEvent() {
 
   const handleSubmit = async () => {
     setSubmitting(true);
-    // TODO: POST to your backend API
-    // const payload = { ...form, tickets };
-    // await fetch('/api/events', { method:'POST', body: JSON.stringify(payload), headers: {'Content-Type':'application/json'} });
-    await new Promise(r => setTimeout(r, 1800)); // simulate
+    setError('');
+
+    const payload = {
+      ...form,
+      maxAttendees: form.maxAttendees ? Number(form.maxAttendees) : null,
+      tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      tickets: tickets
+        .filter(t => t.name)
+        .map(t => ({
+          name: t.name,
+          description: t.description,
+          price: form.isFree ? 0 : Number(t.price) || 0,
+          quantity: Number(t.quantity) || 0,
+          available: Number(t.quantity) || 0,
+        })),
+    };
+
+    const res = await createEvent(payload);
     setSubmitting(false);
+
+    if (!res || res.error) {
+      setError(res?.error || 'We couldn’t publish your event. Check your details and try again.');
+      return;
+    }
     setDone(true);
   };
 
@@ -73,10 +104,10 @@ export default function CreateEvent() {
       <div className="page-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh' }}>
         <div style={{ textAlign: 'center', maxWidth: 480, padding: 24 }}>
           <div style={{ fontSize: 64, marginBottom: 20 }}>🎉</div>
-          <CheckCircle2 size={52} style={{ color: 'var(--ct-success)', margin: '0 auto 20px' }} />
+          <CheckCircle2 size={52} style={{ color: 'var(--success)', margin: '0 auto 20px' }} />
           <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 32, marginBottom: 8 }}>Event Created!</h2>
-          <p style={{ color: 'var(--ct-grey)', marginBottom: 8 }}>{form.title}</p>
-          <p style={{ color: 'var(--ct-grey-light)', marginBottom: 32, fontSize: 14 }}>
+          <p style={{ color: 'var(--text-muted)', marginBottom: 8 }}>{form.title}</p>
+          <p style={{ color: 'var(--text-2)', marginBottom: 32, fontSize: 14 }}>
             Your event is live and accepting tickets. Share the link to start selling.
           </p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -95,7 +126,7 @@ export default function CreateEvent() {
   return (
     <div className="page-wrapper">
       {/* Header */}
-      <div style={{ background: 'var(--ct-dark)', borderBottom: '1px solid var(--ct-border)', padding: '32px 0 24px' }}>
+      <div style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)', padding: '32px 0 24px' }}>
         <div className="container" style={{ maxWidth: 780 }}>
           <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 28, marginBottom: 24 }}>
             Create New Event
@@ -108,7 +139,7 @@ export default function CreateEvent() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <div style={{
                     width: 32, height: 32, borderRadius: '50%',
-                    background: i < step ? 'var(--ct-success)' : i === step ? 'var(--ct-orange)' : 'var(--ct-dark-4)',
+                    background: i < step ? 'var(--success)' : i === step ? 'var(--ct-orange)' : 'var(--bg-3)',
                     color: 'white',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-display)',
@@ -116,12 +147,12 @@ export default function CreateEvent() {
                   }}>
                     {i < step ? <CheckCircle2 size={16} /> : i + 1}
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: i === step ? 'var(--ct-white)' : 'var(--ct-grey)', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: i === step ? 'var(--text)' : 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                     {s}
                   </span>
                 </div>
                 {i < STEPS.length - 1 && (
-                  <div style={{ flex: 1, height: 1, background: i < step ? 'var(--ct-success)' : 'var(--ct-border)', margin: '0 16px', transition: 'background 0.3s' }} />
+                  <div style={{ flex: 1, height: 1, background: i < step ? 'var(--success)' : 'var(--border)', margin: '0 16px', transition: 'background 0.3s' }} />
                 )}
               </div>
             ))}
@@ -144,7 +175,7 @@ export default function CreateEvent() {
                   placeholder="e.g. Nairobi Jazz Night 2025"
                   maxLength={100}
                 />
-                <span style={{ fontSize: 11, color: 'var(--ct-grey)' }}>{form.title.length}/100</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{form.title.length}/100</span>
               </div>
 
               <div className="form-group">
@@ -155,9 +186,9 @@ export default function CreateEvent() {
                       onClick={() => set('category', c.id)}
                       style={{
                         padding: '10px 12px', borderRadius: 10, border: '1px solid',
-                        borderColor: form.category === c.id ? 'var(--ct-orange)' : 'var(--ct-border)',
-                        background: form.category === c.id ? 'var(--ct-orange-dim)' : 'var(--ct-dark-2)',
-                        color: form.category === c.id ? 'var(--ct-orange)' : 'var(--ct-grey-light)',
+                        borderColor: form.category === c.id ? 'var(--ct-orange)' : 'var(--border)',
+                        background: form.category === c.id ? 'var(--ct-orange-dim)' : 'var(--bg-2)',
+                        color: form.category === c.id ? 'var(--ct-orange)' : 'var(--text-2)',
                         fontSize: 13, fontWeight: 500, cursor: 'pointer', transition: 'all 0.2s',
                         textAlign: 'left',
                       }}>
@@ -236,7 +267,7 @@ export default function CreateEvent() {
               <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
                 <label style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
                   <input type="checkbox" checked={form.isPublic} onChange={e => set('isPublic', e.target.checked)} style={{ width: 18, height: 18 }} />
-                  <span style={{ fontSize: 14, color: 'var(--ct-grey-light)' }}>Public event (visible on Chukua Ticket)</span>
+                  <span style={{ fontSize: 14, color: 'var(--text-2)' }}>Public event (visible on Chukua Ticket)</span>
                 </label>
               </div>
             </div>
@@ -249,7 +280,7 @@ export default function CreateEvent() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div>
                 <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 22 }}>Ticket Types</h2>
-                <p style={{ color: 'var(--ct-grey)', fontSize: 14, marginTop: 4 }}>Add one or more ticket tiers. Set price to 0 for free registration.</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: 14, marginTop: 4 }}>Add one or more ticket tiers. Set price to 0 for free registration.</p>
               </div>
               <button className="btn btn-secondary btn-sm" onClick={addTicket} style={{ display: 'flex', gap: 6 }}>
                 <Plus size={14} /> Add Tier
@@ -269,7 +300,7 @@ export default function CreateEvent() {
                     {tickets.length > 1 && (
                       <button
                         onClick={() => removeTicket(ticket.id)}
-                        style={{ background: 'none', border: 'none', color: 'var(--ct-danger)', cursor: 'pointer', padding: 4 }}
+                        style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 4 }}
                       >
                         <Trash2 size={16} />
                       </button>
@@ -311,7 +342,7 @@ export default function CreateEvent() {
                         value={ticket.price && ticket.quantity
                           ? `KES ${(ticket.price * ticket.quantity).toLocaleString()}`
                           : '—'}
-                        style={{ background: 'var(--ct-dark-3)', color: 'var(--ct-orange)', cursor: 'default' }}
+                        style={{ background: 'var(--bg-3)', color: 'var(--ct-orange)', cursor: 'default' }}
                       />
                     </div>
                     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
@@ -329,7 +360,7 @@ export default function CreateEvent() {
 
             {/* Revenue summary */}
             <div style={{
-              background: 'var(--ct-dark-2)', border: '1px solid var(--ct-border)',
+              background: 'var(--bg-2)', border: '1px solid var(--border)',
               borderRadius: 14, padding: 20,
             }}>
               <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, marginBottom: 12 }}>
@@ -337,26 +368,26 @@ export default function CreateEvent() {
               </h4>
               {tickets.map(t => t.name && t.price && t.quantity ? (
                 <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
-                  <span style={{ color: 'var(--ct-grey)' }}>{t.name} × {Number(t.quantity).toLocaleString()}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{t.name} × {Number(t.quantity).toLocaleString()}</span>
                   <span>KES {(t.price * t.quantity).toLocaleString()}</span>
                 </div>
               ) : null)}
               <div className="divider" style={{ margin: '10px 0' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
-                <span style={{ color: 'var(--ct-grey)' }}>Gross revenue</span>
+                <span style={{ color: 'var(--text-muted)' }}>Gross revenue</span>
                 <span style={{ fontWeight: 600 }}>
                   KES {tickets.reduce((s, t) => s + (Number(t.price) * Number(t.quantity) || 0), 0).toLocaleString()}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
-                <span style={{ color: 'var(--ct-grey)' }}>Platform fee (7% — paid by attendees)</span>
+                <span style={{ color: 'var(--text-muted)' }}>Platform fee (7% — paid by attendees)</span>
                 <span style={{ color: 'var(--ct-orange)' }}>
                   KES {Math.round(tickets.reduce((s, t) => s + (Number(t.price) * Number(t.quantity) || 0), 0) * 0.07).toLocaleString()}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 15 }}>
                 <span>You receive</span>
-                <span style={{ color: 'var(--ct-success)' }}>
+                <span style={{ color: 'var(--success)' }}>
                   KES {tickets.reduce((s, t) => s + (Number(t.price) * Number(t.quantity) || 0), 0).toLocaleString()}
                 </span>
               </div>
@@ -381,8 +412,8 @@ export default function CreateEvent() {
                 )}
                 {!form.image && (
                   <div style={{
-                    marginTop: 12, border: '2px dashed var(--ct-border)', borderRadius: 12,
-                    padding: 32, textAlign: 'center', color: 'var(--ct-grey)',
+                    marginTop: 12, border: '2px dashed var(--border)', borderRadius: 12,
+                    padding: 32, textAlign: 'center', color: 'var(--text-muted)',
                   }}>
                     <Image size={32} style={{ margin: '0 auto 8px' }} />
                     <p style={{ fontSize: 13 }}>Paste an image URL above, or use Unsplash/Cloudinary for hosting</p>
@@ -405,7 +436,7 @@ export default function CreateEvent() {
                       ['Visibility', form.isPublic ? 'Public' : 'Private'],
                     ].map(([k, v]) => (
                       <div key={k}>
-                        <p style={{ fontSize: 11, color: 'var(--ct-grey)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{k}</p>
+                        <p style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{k}</p>
                         <p style={{ fontWeight: 600 }}>{v}</p>
                       </div>
                     ))}
@@ -415,11 +446,35 @@ export default function CreateEvent() {
 
               <div style={{
                 background: 'rgba(255,92,0,0.08)', border: '1px solid rgba(255,92,0,0.2)',
-                borderRadius: 12, padding: 16, fontSize: 13, color: 'var(--ct-grey-light)', lineHeight: 1.6,
+                borderRadius: 12, padding: 16, fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6,
               }}>
-                ℹ️ By creating this event you agree to Chukua Ticket's Terms of Service. Your 7% platform fee will be added to attendee checkout. You receive 100% of the base ticket price within 24hrs of event completion.
+                ℹ️ By creating this event you agree to Chukua Ticket's Terms of Service. Attendees pay exactly the ticket price you set — nothing is added at checkout. The 7% platform fee comes out of your revenue, so a KES 2,000 ticket pays you KES 1,860. Each sale is split at the moment of payment and settles to your M-Pesa or bank within 2 working days.
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Payout setup reminder — publishing is allowed, settlement isn't possible without it */}
+        {step === STEPS.length - 1 && profile && !payoutReady && (
+          <div style={{
+            display: 'flex', gap: 12, alignItems: 'flex-start',
+            background: 'rgba(255,92,0,0.08)', border: '1px solid rgba(255,92,0,0.25)',
+            borderRadius: 12, padding: 16, marginTop: 20, fontSize: 13, lineHeight: 1.6,
+          }}>
+            <AlertTriangle size={18} style={{ color: 'var(--ct-orange)', flexShrink: 0, marginTop: 1 }} />
+            <span style={{ color: 'var(--text-2)' }}>
+              You can publish now, but ticket revenue can't be settled until you add your M-Pesa or
+              bank details. You'll be prompted from your dashboard.
+            </span>
+          </div>
+        )}
+
+        {error && (
+          <div style={{
+            background: 'rgba(239,68,68,0.1)', border: '1px solid var(--danger)',
+            borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--danger)', marginTop: 20,
+          }}>
+            {error}
           </div>
         )}
 
