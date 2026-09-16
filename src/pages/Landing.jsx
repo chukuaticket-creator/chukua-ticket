@@ -16,7 +16,7 @@ const FEATURES = [
   { icon: <Shield size={20} />, title: 'Fraud-Proof QR Tickets', desc: 'Dynamic QR codes with real-time gate validation. No duplicates. No forgeries.' },
   { icon: <BarChart2 size={20} />, title: 'Live Organiser Dashboard', desc: 'Watch ticket sales, check-ins, and revenue update in real time.' },
   { icon: <MapPin size={20} />, title: 'Event Discovery Map', desc: 'Attendees find events near them on a live map. Your event gets discovered organically.' },
-  { icon: <Zap size={20} />, title: 'Instant Payouts', desc: 'Revenue in your M-Pesa or bank within 24hrs post-event. No delays.' },
+  { icon: <Zap size={20} />, title: 'Automatic Payouts', desc: 'Every sale splits at checkout. Your share settles to your M-Pesa or bank in 2 working days — no requests, no waiting for the event to end.' },
   { icon: <Users size={20} />, title: 'Team Command Chat', desc: 'Built-in staff chat with roles, alerts and quick commands — no WhatsApp needed.' },
 ];
 
@@ -24,20 +24,17 @@ const STEPS = [
   { n: '01', title: 'Create Your Event', desc: 'Set up details, ticket tiers and pricing in under 5 minutes.' },
   { n: '02', title: 'Share & Sell', desc: 'Your event goes live instantly. Share the link or let attendees find it on Chukua Ticket.' },
   { n: '03', title: 'Manage Live', desc: 'Track sales, scan tickets at the gate, chat with your team — all from one dashboard.' },
-  { n: '04', title: 'Get Paid', desc: 'Revenue lands in your account after the event. Simple, transparent, zero surprises.' },
+  { n: '04', title: 'Get Paid', desc: 'Each sale settles to your account automatically — you never have to request a payout.' },
 ];
 
-const TESTIMONIALS = [
-  { name: 'Grace Wanjiku', role: 'Events Director, Mavuno Church', quote: 'We managed 3,000 attendees without a single fraudulent ticket. Gate scanning was seamless.', stars: 5 },
-  { name: 'Brian Otieno', role: 'Founder, Nairobi Comedy Nights', quote: 'The analytics showed me exactly which price point sold best. Revenue up 40% on my next show.', stars: 5 },
-  { name: 'Amina Hassan', role: 'Concert Promoter, Mombasa', quote: 'Payout within 24 hours of my event. That\'s how you build trust with organisers.', stars: 5 },
-];
+// No testimonials until real organisers give them. Section hides itself while empty.
+const TESTIMONIALS = [];
 
 const STATS = [
   { value: '0', label: 'Tickets Sold', live: true },
   { value: '0', label: 'Events Hosted', live: true },
   { value: '7%', label: 'Platform Fee' },
-  { value: '24hr', label: 'Payout Time' },
+  { value: '2 days', label: 'Payout Time' },
 ];
 
 // Reusable event card for landing
@@ -274,14 +271,14 @@ export default function Landing() {
           <div style={{ textAlign: 'center', marginBottom: 44 }}>
             <p className="section-label" style={{ marginBottom: 10 }}>Transparent pricing</p>
             <h2 className="section-title">No hidden fees.<br />Just 7%.</h2>
-            <p className="section-sub" style={{ margin: '14px auto 0' }}>We only make money when you do. The 7% covers payment processing, QR scanning, analytics, and support.</p>
+            <p className="section-sub" style={{ margin: '14px auto 0' }}>We only make money when you do. The 7% comes out of your ticket revenue — never added on top for your attendees. It covers payment processing, QR scanning, analytics, and support.</p>
           </div>
 
           <div style={{ background: 'var(--card-bg)', border: '2px solid var(--ct-orange)', borderRadius: 'var(--radius-lg)', padding: '36px 44px', boxShadow: 'var(--shadow-glow)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 36, alignItems: 'center' }}>
             <div>
               <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 34, marginBottom: 6, color: 'var(--text)' }}>7% per ticket</h3>
-              <p style={{ color: 'var(--text-muted)', marginBottom: 24, fontSize: 14 }}>Added at checkout. You receive your full ticket price.</p>
-              {['Free event listing', 'Unlimited ticket types', 'QR scanning app', 'Real-time dashboard', 'M-Pesa & card payments', '24hr payout', 'Team command chat', 'Live event map'].map(f => (
+              <p style={{ color: 'var(--text-muted)', marginBottom: 24, fontSize: 14 }}>Deducted from your revenue. Attendees pay exactly the price you set.</p>
+              {['Free event listing', 'Unlimited ticket types', 'QR scanning app', 'Real-time dashboard', 'M-Pesa & card payments', 'Automatic 2-day settlement', 'Team command chat', 'Live event map'].map(f => (
                 <div key={f} style={{ display: 'flex', gap: 9, alignItems: 'center', marginBottom: 9 }}>
                   <CheckCircle2 size={15} style={{ color: 'var(--success)', flexShrink: 0 }} />
                   <span style={{ fontSize: 14, color: 'var(--text-2)' }}>{f}</span>
@@ -291,7 +288,7 @@ export default function Landing() {
             <div>
               <div style={{ background: 'var(--bg-2)', borderRadius: 'var(--radius)', padding: 22, marginBottom: 14 }}>
                 <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>Example: KES 2,000 ticket</p>
-                {[['Ticket price', 'KES 2,000'], ['Platform fee (7%)', '+ KES 140']].map(([k,v]) => (
+                {[['Ticket price you set', 'KES 2,000'], ['Platform fee (7%)', '− KES 140']].map(([k,v]) => (
                   <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7, fontSize: 14 }}>
                     <span style={{ color: 'var(--text-muted)' }}>{k}</span>
                     <span style={{ fontWeight: 600, color: k.includes('fee') ? 'var(--ct-orange)' : 'var(--text)' }}>{v}</span>
@@ -300,11 +297,11 @@ export default function Landing() {
                 <div style={{ height: 1, background: 'var(--border)', margin: '10px 0' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 700 }}>
                   <span style={{ color: 'var(--text)' }}>Attendee pays</span>
-                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, color: 'var(--ct-orange)' }}>KES 2,140</span>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, color: 'var(--ct-orange)' }}>KES 2,000</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 13 }}>
                   <span style={{ color: 'var(--text-muted)' }}>You receive</span>
-                  <span style={{ fontWeight: 700, color: 'var(--success)' }}>KES 2,000</span>
+                  <span style={{ fontWeight: 700, color: 'var(--success)' }}>KES 1,860</span>
                 </div>
               </div>
               <Link to="/organiser/create-event" className="btn btn-primary btn-lg btn-block">
@@ -316,6 +313,7 @@ export default function Landing() {
       </section>
 
       {/* ─── TESTIMONIALS ─── */}
+      {TESTIMONIALS.length > 0 && (
       <section style={{ padding: '80px 0', background: 'var(--bg)' }}>
         <div className="container">
           <div style={{ textAlign: 'center', marginBottom: 44 }}>
@@ -338,6 +336,7 @@ export default function Landing() {
           </div>
         </div>
       </section>
+      )}
 
       {/* ─── CTA ─── */}
       <section style={{ padding: '80px 0 100px', background: 'var(--bg-2)' }}>
