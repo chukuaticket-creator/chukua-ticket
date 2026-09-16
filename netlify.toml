@@ -21,3 +21,7 @@
   for = "/*"
   [headers.values]
     X-Content-Type-Options = "nosniff"
+
+[[edge_functions]]
+  function = "event-meta"
+  path = "/events/*"
