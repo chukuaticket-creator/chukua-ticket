@@ -110,12 +110,9 @@ export default function EventDetail() {
     // before the row existed and the sale would be lost.
     const order = await createOrder({
       eventId: event.id,
-      organiserId: event.organiserId,
       reference,
       buyer: { name: buyerName, email: buyerEmail, phone: buyerPhone },
       items: orderLines,
-      subtotal,
-      subaccountCode,
     });
 
     if (order?.error) {
@@ -124,7 +121,10 @@ export default function EventDetail() {
       return;
     }
 
-    if (subtotal === 0) {
+    // Charge what the database calculated, not the figure held in the browser.
+    const chargeable = order.subtotal;
+
+    if (chargeable === 0) {
       const res = await completeFreeOrder(reference);
       setProcessing(false);
       if (res?.error) {
@@ -138,11 +138,11 @@ export default function EventDetail() {
 
     openPaystack({
       email: buyerEmail,
-      amountKES: total, // attendee pays exactly the ticket price
+      amountKES: chargeable, // attendee pays exactly the ticket price
       // Paystack splits at transaction time: the organiser's subaccount is
       // settled directly and our 7% is retained.
-      subaccount: subaccountCode,
-      platformFeeKES: commission,
+      subaccount: order.subaccountCode || subaccountCode,
+      platformFeeKES: order.commission,
       reference,
       eventTitle: event.title,
       onSuccess: () => {
